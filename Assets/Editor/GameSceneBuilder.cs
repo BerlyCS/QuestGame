@@ -1,0 +1,821 @@
+using System.Collections.Generic;
+using System.IO;
+using Oculus.Interaction;
+using Oculus.Interaction.HandGrab;
+using Oculus.Interaction.Input;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+/// <summary>
+/// Builds a clean, playable foundation scene for the treasure/curse game:
+/// XR rig, night lighting, abandoned camp, refuelling campfire and a shield
+/// placeholder. Re-runnable from Tools > Game > Build Game Scene.
+/// </summary>
+public static class GameSceneBuilder
+{
+    const string k_ScenePath = "Assets/Scenes/Game.unity";
+    const string k_PrefabFolder = "Assets/Prefabs/Gameplay";
+    const string k_MaterialFolder = "Assets/Materials/Game";
+    const string k_RigPrefabPath = "Packages/com.meta.xr.sdk.interaction.ovr/Runtime/Prefabs/OVRComprehensiveInteractionRig.prefab";
+    const string k_CameraRigPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRCameraRig.prefab";
+
+    static Material s_Ground;
+    static Material s_Wood;
+    static Material s_Stone;
+    static Material s_Tent;
+    static Material s_Trunk;
+    static Material s_Foliage;
+    static Material s_Metal;
+    static Material s_DarkMetal;
+    static Material s_Shield;
+    static Material s_Treasure;
+    static Material s_Flame;
+    static Material s_Bone;
+    static Material s_Moon;
+
+    [MenuItem("Tools/Game/Build Game Scene")]
+    public static void Build()
+    {
+        EnsureFolders();
+
+        EditorSceneManager.SaveOpenScenes();
+
+        var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+        ConfigureLighting();
+
+        var moonLight = CreateMoonLight();
+
+        var rig = CreateXrRig(out var interactionRig);
+        ConfigureCamera(rig);
+        ConfigureLocomotion(interactionRig);
+
+        CreateMaterials();
+
+        var environment = new GameObject("Environment").transform;
+        BuildGround(environment);
+        BuildPerimeter(environment);
+        BuildMoon(environment);
+        var campfire = BuildCampfire(environment);
+        BuildLogPile(environment);
+        BuildTent(environment);
+        BuildCampProps(environment);
+        BuildTreasure(environment);
+        BuildInteractables(environment);
+        BuildEnemyBanisher(environment);
+        BuildShield(interactionRig);
+
+        if (rig != null)
+            rig.AddComponent<PlayerHealth>();
+
+        var systems = new GameObject("Game Systems");
+        var night = systems.AddComponent<NightEnvironmentController>();
+        Wire(night, "m_Campfire", campfire);
+        Wire(night, "m_MoonLight", moonLight);
+
+        BuildSkeletonSpawner(systems, rig);
+
+        AssetDatabase.SaveAssets();
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, k_ScenePath);
+        AddToBuildSettings(k_ScenePath);
+
+        Debug.Log($"[GameSceneBuilder] Built {k_ScenePath}");
+    }
+
+    static void EnsureFolders()
+    {
+        EnsureFolder("Assets/Scenes");
+        EnsureFolder("Assets/Prefabs");
+        EnsureFolder(k_PrefabFolder);
+        EnsureFolder("Assets/Materials");
+        EnsureFolder(k_MaterialFolder);
+    }
+
+    static void ConfigureLighting()
+    {
+        RenderSettings.skybox = null;
+        RenderSettings.ambientMode = AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.02f, 0.03f, 0.05f);
+        RenderSettings.ambientIntensity = 0.12f;
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Exponential;
+        RenderSettings.fogColor = new Color(0.01f, 0.01f, 0.02f);
+        RenderSettings.fogDensity = 0.012f;
+    }
+
+    static Light CreateMoonLight()
+    {
+        var go = new GameObject("Moon Light");
+        go.transform.rotation = Quaternion.Euler(55f, -35f, 0f);
+        var light = go.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = new Color(0.55f, 0.62f, 0.9f);
+        light.intensity = 0.1f;
+        light.shadows = LightShadows.Soft;
+        return light;
+    }
+
+    /// <summary>
+    /// Builds the XR rig. The Interaction SDK's comprehensive rig has no camera
+    /// of its own: it must be nested under an OVRCameraRig, which supplies the
+    /// OVRManager and the CenterEyeAnchor camera, then reference that camera rig.
+    /// </summary>
+    static GameObject CreateXrRig(out GameObject interactionRig)
+    {
+        interactionRig = null;
+
+        var cameraRigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(k_CameraRigPrefabPath);
+        if (cameraRigPrefab == null)
+        {
+            Debug.LogError($"[GameSceneBuilder] Camera rig prefab not found at {k_CameraRigPrefabPath}");
+            return null;
+        }
+
+        var cameraRig = (GameObject)PrefabUtility.InstantiatePrefab(cameraRigPrefab);
+        cameraRig.name = "OVRCameraRig";
+
+        var rigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(k_RigPrefabPath);
+        if (rigPrefab == null)
+        {
+            Debug.LogError($"[GameSceneBuilder] Interaction rig prefab not found at {k_RigPrefabPath}");
+            return cameraRig;
+        }
+
+        interactionRig = (GameObject)PrefabUtility.InstantiatePrefab(rigPrefab, cameraRig.transform);
+        interactionRig.name = "OVRComprehensiveInteractionRig";
+
+        var cameraRigComponent = cameraRig.GetComponent<OVRCameraRig>();
+        var cameraRigRef = interactionRig.GetComponent<OVRCameraRigRef>();
+        if (cameraRigComponent != null && cameraRigRef != null)
+            Wire(cameraRigRef, "_ovrCameraRig", cameraRigComponent);
+
+        var manager = cameraRig.GetComponent<OVRManager>();
+        if (manager != null)
+        {
+            var serialized = new SerializedObject(manager);
+            var origin = serialized.FindProperty("_trackingOriginType");
+            if (origin != null)
+            {
+                origin.intValue = (int)OVRManager.TrackingOrigin.FloorLevel;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
+        return cameraRig;
+    }
+
+    static void ConfigureCamera(GameObject rig)
+    {
+        if (rig == null)
+            return;
+
+        var camera = rig.GetComponentInChildren<Camera>();
+        if (camera == null)
+            return;
+
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.005f, 0.006f, 0.012f, 1f);
+    }
+
+    /// <summary>
+    /// The player guards the camp on the spot, so smooth locomotion and
+    /// teleport are not used. The comprehensive rig's Locomotor is disabled
+    /// because it expects a player origin/eyes and camera that this stationary
+    /// setup does not provide, and would otherwise log assertion errors.
+    /// </summary>
+    static void ConfigureLocomotion(GameObject interactionRig)
+    {
+        if (interactionRig == null)
+            return;
+
+        var locomotor = interactionRig.transform.Find("Locomotor");
+        if (locomotor != null)
+            locomotor.gameObject.SetActive(false);
+        else
+            Debug.LogWarning("[GameSceneBuilder] 'Locomotor' not found on the interaction rig.");
+    }
+
+    static Transform FindByName(Transform root, string namePart)
+    {
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            if (t.name.Contains(namePart))
+                return t;
+        return null;
+    }
+
+    static void DisableChild(Transform parent, string path)
+    {
+        var child = parent.Find(path);
+        if (child == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Could not find '{path}' under '{parent.name}'");
+            return;
+        }
+
+        child.gameObject.SetActive(false);
+    }
+
+    static void CreateMaterials()
+    {
+        s_Ground = CreateMaterial("M_Ground", new Color(0.15f, 0.13f, 0.1f), 0f, 0.05f);
+        s_Wood = CreateMaterial("M_Wood", new Color(0.18f, 0.11f, 0.06f), 0f, 0.1f);
+        s_Stone = CreateMaterial("M_Stone", new Color(0.22f, 0.22f, 0.24f), 0f, 0.1f);
+        s_Tent = CreateMaterial("M_Tent", new Color(0.16f, 0.13f, 0.11f), 0f, 0.1f);
+        s_Trunk = CreateMaterial("M_Trunk", new Color(0.12f, 0.08f, 0.05f), 0f, 0.1f);
+        s_Foliage = CreateMaterial("M_Foliage", new Color(0.06f, 0.12f, 0.06f), 0f, 0.1f);
+        s_Metal = CreateMaterial("M_Metal", new Color(0.6f, 0.55f, 0.3f), 0.8f, 0.6f);
+        s_DarkMetal = CreateMaterial("M_DarkMetal", new Color(0.14f, 0.13f, 0.12f), 0.7f, 0.4f);
+        s_Shield = CreateMaterial("M_Shield", new Color(0.32f, 0.2f, 0.11f), 0.1f, 0.3f);
+        s_Treasure = CreateMaterial("M_Treasure", new Color(0.85f, 0.7f, 0.2f), 0.9f, 0.8f, new Color(0.45f, 0.35f, 0.08f));
+        s_Flame = CreateMaterial("M_Flame", new Color(1f, 0.6f, 0.15f), 0f, 0f, null, "Universal Render Pipeline/Particles/Unlit");
+        s_Bone = CreateMaterial("M_Bone", new Color(0.82f, 0.8f, 0.72f), 0f, 0.15f);
+        s_Moon = CreateMaterial("M_Moon", new Color(0.9f, 0.92f, 1f), 0f, 0.2f, new Color(1.5f, 1.6f, 2f));
+    }
+
+    static void BuildGround(Transform parent)
+    {
+        CreatePrimitive("Ground", PrimitiveType.Plane, parent, Vector3.zero, new Vector3(6f, 1f, 6f), s_Ground);
+    }
+
+    static void BuildMoon(Transform parent)
+    {
+        var moon = CreatePrimitive("Moon", PrimitiveType.Sphere, parent,
+            new Vector3(-35f, 60f, 75f), new Vector3(12f, 12f, 12f), s_Moon);
+        moon.GetComponent<Collider>().enabled = false;
+    }
+
+    static void BuildPerimeter(Transform parent)
+    {
+        var rocks = new GameObject("Rocks").transform;
+        rocks.SetParent(parent, false);
+        var rockPositions = new[]
+        {
+            new Vector3(-3.4f, 0.15f, 3.2f), new Vector3(3.1f, 0.2f, 2.6f),
+            new Vector3(-4.2f, 0.25f, -1.5f), new Vector3(2.7f, 0.12f, 4.6f),
+            new Vector3(-1.8f, 0.1f, 5.4f), new Vector3(4.5f, 0.3f, 0.5f)
+        };
+        for (int i = 0; i < rockPositions.Length; i++)
+        {
+            float s = 0.5f + (i % 3) * 0.25f;
+            CreatePrimitive($"Rock_{i}", PrimitiveType.Sphere, rocks, rockPositions[i],
+                new Vector3(s, s * 0.7f, s), s_Stone);
+        }
+
+        var trees = new GameObject("Trees").transform;
+        trees.SetParent(parent, false);
+        for (int i = 0; i < 10; i++)
+        {
+            float angle = i / 10f * Mathf.PI * 2f;
+            float radius = 9f + (i % 2) * 2.5f;
+            var position = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+
+            var tree = new GameObject($"Tree_{i}");
+            tree.transform.SetParent(trees, false);
+            tree.transform.localPosition = position;
+
+            CreatePrimitive("Trunk", PrimitiveType.Cylinder, tree.transform,
+                new Vector3(0f, 1.5f, 0f), new Vector3(0.3f, 1.5f, 0.3f), s_Trunk);
+            CreatePrimitive("Canopy", PrimitiveType.Sphere, tree.transform,
+                new Vector3(0f, 3.4f, 0f), new Vector3(2.6f, 2.2f, 2.6f), s_Foliage);
+        }
+    }
+
+    static CampfireFuel BuildCampfire(Transform parent)
+    {
+        var root = new GameObject("Campfire");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0f, 0f, 2.2f);
+        var fuel = root.AddComponent<CampfireFuel>();
+
+        for (int i = 0; i < 10; i++)
+        {
+            float angle = i / 10f * Mathf.PI * 2f;
+            CreatePrimitive($"Stone_{i}", PrimitiveType.Sphere, root.transform,
+                new Vector3(Mathf.Cos(angle) * 0.62f, 0.08f, Mathf.Sin(angle) * 0.62f),
+                new Vector3(0.22f, 0.16f, 0.22f), s_Stone);
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            var log = CreatePrimitive($"BaseLog_{i}", PrimitiveType.Cylinder, root.transform,
+                new Vector3(0f, 0.12f, 0f), new Vector3(0.12f, 0.5f, 0.12f), s_Wood);
+            log.transform.localRotation = Quaternion.Euler(90f, i * 45f, 0f);
+        }
+
+        BuildCookingTripod(root.transform);
+
+        var flame = new GameObject("Flame");
+        flame.transform.SetParent(root.transform, false);
+        flame.transform.localPosition = new Vector3(0f, 0.25f, 0f);
+        var particles = flame.AddComponent<ParticleSystem>();
+        ConfigureFlame(particles);
+
+        var lightGo = new GameObject("Fire Light");
+        lightGo.transform.SetParent(root.transform, false);
+        lightGo.transform.localPosition = new Vector3(0f, 0.7f, 0f);
+        var light = lightGo.AddComponent<Light>();
+        light.type = LightType.Point;
+        light.color = new Color(1f, 0.7f, 0.25f);
+        light.range = 16f;
+        light.intensity = 6f;
+        light.shadows = LightShadows.None;
+
+        var trigger = new GameObject("Fuel Trigger");
+        trigger.transform.SetParent(root.transform, false);
+        trigger.transform.localPosition = new Vector3(0f, 0.3f, 0f);
+        var triggerCollider = trigger.AddComponent<SphereCollider>();
+        triggerCollider.isTrigger = true;
+        triggerCollider.radius = 0.9f;
+
+        Wire(fuel, "m_FireLight", light);
+        Wire(fuel, "m_FlameParticles", particles);
+
+        return fuel;
+    }
+
+    static void BuildCookingTripod(Transform parent)
+    {
+        var tripod = new GameObject("Cooking Tripod");
+        tripod.transform.SetParent(parent, false);
+
+        for (int i = 0; i < 3; i++)
+        {
+            float angle = i / 3f * Mathf.PI * 2f;
+            var radial = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+            var pole = CreatePrimitive($"Pole_{i}", PrimitiveType.Cylinder, tripod.transform,
+                new Vector3(radial.x * 0.42f, 0.8f, radial.z * 0.42f),
+                new Vector3(0.045f, 0.85f, 0.045f), s_Wood);
+
+            var tangent = Vector3.Cross(Vector3.up, radial).normalized;
+            pole.transform.localRotation = Quaternion.AngleAxis(20f, tangent);
+            RemoveCollider(pole);
+        }
+
+        var chain = CreatePrimitive("Chain", PrimitiveType.Cylinder, tripod.transform,
+            new Vector3(0f, 1.2f, 0f), new Vector3(0.012f, 0.4f, 0.012f), s_DarkMetal);
+        RemoveCollider(chain);
+
+        var pot = CreatePrimitive("Cooking Pot", PrimitiveType.Cylinder, tripod.transform,
+            new Vector3(0f, 0.72f, 0f), new Vector3(0.3f, 0.15f, 0.3f), s_DarkMetal);
+        RemoveCollider(pot);
+    }
+
+    static void ConfigureFlame(ParticleSystem ps)
+    {
+        var main = ps.main;
+        main.loop = true;
+        main.playOnAwake = false;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.45f, 0.8f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.8f, 1.6f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.18f, 0.45f);
+        main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.55f, 0.1f), new Color(1f, 0.85f, 0.35f));
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 400;
+
+        var emission = ps.emission;
+        emission.rateOverTime = 40f;
+
+        var shape = ps.shape;
+        shape.enabled = true;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 15f;
+        shape.radius = 0.12f;
+
+        var colorOverLifetime = ps.colorOverLifetime;
+        colorOverLifetime.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(1f, 0.8f, 0.3f), 0f),
+                new GradientColorKey(new Color(0.8f, 0.15f, 0.02f), 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0.9f, 0f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        colorOverLifetime.color = new ParticleSystem.MinMaxGradient(gradient);
+
+        var sizeOverLifetime = ps.sizeOverLifetime;
+        sizeOverLifetime.enabled = true;
+        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f,
+            new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, 0.1f)));
+
+        var renderer = ps.GetComponent<ParticleSystemRenderer>();
+        renderer.sharedMaterial = s_Flame;
+    }
+
+    static void BuildLogPile(Transform parent)
+    {
+        var logPrefab = BuildLogPrefab();
+
+        var pile = new GameObject("Log Pile");
+        pile.transform.SetParent(parent, false);
+        pile.transform.localPosition = new Vector3(1.6f, 0f, 1.7f);
+
+        for (int i = 0; i < 6; i++)
+        {
+            int row = i / 3;
+            int column = i % 3;
+            var log = (GameObject)PrefabUtility.InstantiatePrefab(logPrefab, pile.transform);
+            log.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            log.transform.localPosition = new Vector3((column - 1) * 0.16f, 0.08f + row * 0.13f, row % 2 == 1 ? 0.06f : 0f);
+        }
+    }
+
+    static GameObject BuildLogPrefab()
+    {
+        var log = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        log.name = "Log";
+        log.transform.localScale = new Vector3(0.14f, 0.35f, 0.14f);
+
+        var rigidbody = log.AddComponent<Rigidbody>();
+        rigidbody.mass = 0.5f;
+        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+        var grabbable = log.AddComponent<Grabbable>();
+        var grab = log.AddComponent<GrabInteractable>();
+        grab.InjectRigidbody(rigidbody);
+        grab.InjectOptionalPointableElement(grabbable);
+
+        var handGrab = log.AddComponent<HandGrabInteractable>();
+        handGrab.InjectRigidbody(rigidbody);
+        handGrab.InjectOptionalPointableElement(grabbable);
+
+        log.AddComponent<Log>();
+        log.GetComponent<Renderer>().sharedMaterial = s_Wood;
+
+        var prefab = PrefabUtility.SaveAsPrefabAsset(log, $"{k_PrefabFolder}/Log.prefab");
+        Object.DestroyImmediate(log);
+        return prefab;
+    }
+
+    static void BuildTent(Transform parent)
+    {
+        var tent = new GameObject("Tent");
+        tent.transform.SetParent(parent, false);
+        tent.transform.localPosition = new Vector3(-2.8f, 0f, -0.4f);
+        tent.transform.localRotation = Quaternion.Euler(0f, 25f, 0f);
+
+        CreateTentPanel(tent.transform, "Roof Left", new Vector3(-0.55f, 0.62f, 0f), 52f);
+        CreateTentPanel(tent.transform, "Roof Right", new Vector3(0.55f, 0.62f, 0f), -52f);
+
+        CreatePrimitive("Back Wall", PrimitiveType.Cube, tent.transform,
+            new Vector3(0f, 0.5f, -1.25f), new Vector3(1.75f, 1f, 0.06f), s_Tent);
+
+        var ridge = CreatePrimitive("Ridge Pole", PrimitiveType.Cylinder, tent.transform,
+            new Vector3(0f, 1.13f, 0f), new Vector3(0.05f, 1.35f, 0.05f), s_Trunk);
+        ridge.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        var bedroll = CreatePrimitive("Bedroll", PrimitiveType.Cube, tent.transform,
+            new Vector3(0f, 0.05f, 0.2f), new Vector3(0.5f, 0.1f, 0.95f), s_Tent);
+        RemoveCollider(bedroll);
+    }
+
+    static void CreateTentPanel(Transform parent, string name, Vector3 position, float zAngle)
+    {
+        var panel = CreatePrimitive(name, PrimitiveType.Cube, parent, position,
+            new Vector3(1.6f, 0.06f, 2.6f), s_Tent);
+        panel.transform.localRotation = Quaternion.Euler(0f, 0f, zAngle);
+    }
+
+    static void BuildCampProps(Transform parent)
+    {
+        var props = new GameObject("Camp Props").transform;
+        props.SetParent(parent, false);
+
+        var bench = CreatePrimitive("Log Bench", PrimitiveType.Cylinder, props,
+            new Vector3(1.15f, 0.22f, 0.9f), new Vector3(0.22f, 0.6f, 0.22f), s_Wood);
+        bench.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+
+        CreatePrimitive("Barrel", PrimitiveType.Cylinder, props,
+            new Vector3(-1.7f, 0.35f, -1.2f), new Vector3(0.5f, 0.35f, 0.5f), s_Wood);
+
+        var crate1 = CreatePrimitive("Crate 1", PrimitiveType.Cube, props,
+            new Vector3(-2f, 0.25f, 1.5f), new Vector3(0.5f, 0.5f, 0.5f), s_Wood);
+        crate1.transform.localRotation = Quaternion.Euler(0f, 18f, 0f);
+
+        var crate2 = CreatePrimitive("Crate 2", PrimitiveType.Cube, props,
+            new Vector3(-1.55f, 0.2f, 1.85f), new Vector3(0.4f, 0.4f, 0.4f), s_Wood);
+        crate2.transform.localRotation = Quaternion.Euler(0f, -12f, 0f);
+
+        var fence = new GameObject("Fence").transform;
+        fence.SetParent(props, false);
+        for (int i = 0; i < 14; i++)
+        {
+            float angle = Mathf.Lerp(-70f, 70f, i / 13f) * Mathf.Deg2Rad;
+            var position = new Vector3(Mathf.Sin(angle) * 5f, 0.45f, Mathf.Cos(angle) * 5f);
+            var stake = CreatePrimitive($"Stake_{i}", PrimitiveType.Cylinder, fence, position,
+                new Vector3(0.06f, 0.45f, 0.06f), s_Trunk);
+            stake.transform.localRotation = Quaternion.Euler((i % 3 - 1) * 4f, 0f, (i % 2) * 4f);
+            RemoveCollider(stake);
+        }
+    }
+
+    static GameObject BuildSkeletonPrefab()
+    {
+        var root = new GameObject("Skeleton");
+        var skeleton = root.AddComponent<Skeleton>();
+
+        var body = new GameObject("Body");
+        body.transform.SetParent(root.transform, false);
+
+        CreatePrimitive("Skull", PrimitiveType.Sphere, body.transform,
+            new Vector3(0f, 1.62f, 0f), new Vector3(0.24f, 0.24f, 0.24f), s_Bone);
+        CreatePrimitive("Jaw", PrimitiveType.Cube, body.transform,
+            new Vector3(0f, 1.52f, 0.04f), new Vector3(0.16f, 0.06f, 0.14f), s_Bone);
+        CreatePrimitive("Spine", PrimitiveType.Cylinder, body.transform,
+            new Vector3(0f, 1.2f, 0f), new Vector3(0.08f, 0.22f, 0.08f), s_Bone);
+
+        for (int i = 0; i < 3; i++)
+            CreatePrimitive($"Rib_{i}", PrimitiveType.Cube, body.transform,
+                new Vector3(0f, 1.32f - i * 0.11f, 0f),
+                new Vector3(0.34f - i * 0.03f, 0.035f, 0.2f), s_Bone);
+
+        CreatePrimitive("Pelvis", PrimitiveType.Cube, body.transform,
+            new Vector3(0f, 0.92f, 0f), new Vector3(0.3f, 0.14f, 0.18f), s_Bone);
+
+        var leftArm = new GameObject("Left Arm");
+        leftArm.transform.SetParent(body.transform, false);
+        leftArm.transform.localPosition = new Vector3(0.24f, 1.35f, 0f);
+        CreatePrimitive("Upper", PrimitiveType.Capsule, leftArm.transform,
+            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), s_Bone);
+
+        var rightArm = new GameObject("Right Arm");
+        rightArm.transform.SetParent(body.transform, false);
+        rightArm.transform.localPosition = new Vector3(-0.24f, 1.35f, 0f);
+        CreatePrimitive("Upper", PrimitiveType.Capsule, rightArm.transform,
+            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), s_Bone);
+
+        CreatePrimitive("Left Leg", PrimitiveType.Capsule, body.transform,
+            new Vector3(0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), s_Bone);
+        CreatePrimitive("Right Leg", PrimitiveType.Capsule, body.transform,
+            new Vector3(-0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), s_Bone);
+
+        var capsule = root.AddComponent<CapsuleCollider>();
+        capsule.center = new Vector3(0f, 0.9f, 0f);
+        capsule.height = 1.8f;
+        capsule.radius = 0.3f;
+
+        var rigidbody = root.AddComponent<Rigidbody>();
+        rigidbody.isKinematic = true;
+        rigidbody.useGravity = false;
+
+        foreach (var collider in root.GetComponentsInChildren<Collider>())
+            if (collider != capsule)
+                Object.DestroyImmediate(collider);
+
+        var renderers = root.GetComponentsInChildren<Renderer>();
+
+        Wire(skeleton, "m_Body", body.transform);
+        Wire(skeleton, "m_LeftArm", leftArm.transform);
+        Wire(skeleton, "m_RightArm", rightArm.transform);
+
+        var serialized = new SerializedObject(skeleton);
+        var rendererArray = serialized.FindProperty("m_Renderers");
+        rendererArray.arraySize = renderers.Length;
+        for (int i = 0; i < renderers.Length; i++)
+            rendererArray.GetArrayElementAtIndex(i).objectReferenceValue = renderers[i];
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+
+        var prefab = PrefabUtility.SaveAsPrefabAsset(root, $"{k_PrefabFolder}/Skeleton.prefab");
+        Object.DestroyImmediate(root);
+        return prefab;
+    }
+
+    static void BuildSkeletonSpawner(GameObject systems, GameObject rig)
+    {
+        var prefab = BuildSkeletonPrefab();
+
+        var spawnerGo = new GameObject("Skeleton Spawner");
+        spawnerGo.transform.SetParent(systems.transform, false);
+        var spawner = spawnerGo.AddComponent<SkeletonSpawner>();
+        Wire(spawner, "m_SkeletonPrefab", prefab);
+
+        if (rig != null)
+        {
+            var camera = rig.GetComponentInChildren<Camera>();
+            if (camera != null)
+                Wire(spawner, "m_Target", camera.transform);
+        }
+    }
+
+    static void BuildTreasure(Transform parent)
+    {
+        var treasure = new GameObject("Treasure Pedestal");
+        treasure.transform.SetParent(parent, false);
+        treasure.transform.localPosition = new Vector3(0f, 0f, 6f);
+
+        CreatePrimitive("Pedestal", PrimitiveType.Cylinder, treasure.transform,
+            new Vector3(0f, 0.5f, 0f), new Vector3(0.7f, 0.5f, 0.7f), s_Stone);
+        CreatePrimitive("Chest", PrimitiveType.Cube, treasure.transform,
+            new Vector3(0f, 1.2f, 0f), new Vector3(0.6f, 0.4f, 0.45f), s_Treasure);
+    }
+
+    static void BuildShield(GameObject rig)
+    {
+        if (rig == null)
+            return;
+
+        var leftController = FindByName(rig.transform, "LeftHandAnchor")
+            ?? FindByName(rig.transform, "LeftControllerAnchor")
+            ?? FindByName(rig.transform, "ComprehensiveInteractorsLeft")
+            ?? FindByName(rig.transform, "LeftController");
+        if (leftController == null)
+        {
+            Debug.LogWarning("[GameSceneBuilder] Left hand/controller anchor not found; shield not attached.");
+            return;
+        }
+
+        var shield = new GameObject("Shield");
+        shield.transform.SetParent(leftController, false);
+        shield.transform.localPosition = new Vector3(0f, -0.02f, 0.12f);
+        shield.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        var disc = CreatePrimitive("Shield Disc", PrimitiveType.Cylinder, shield.transform,
+            Vector3.zero, new Vector3(0.5f, 0.03f, 0.5f), s_Shield);
+        var boss = CreatePrimitive("Shield Boss", PrimitiveType.Sphere, shield.transform,
+            Vector3.zero, new Vector3(0.14f, 0.14f, 0.14f), s_Metal);
+
+        Object.DestroyImmediate(disc.GetComponent<Collider>());
+        Object.DestroyImmediate(boss.GetComponent<Collider>());
+
+        shield.AddComponent<Shield>();
+    }
+
+    /// <summary>
+    /// A low table with simple grabbable shapes (cube, sphere, capsule) so the
+    /// player has something to pick up with the controllers or hands.
+    /// </summary>
+    static void BuildInteractables(Transform parent)
+    {
+        var root = new GameObject("Interactables");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0f, 0f, 1.4f);
+
+        var table = new GameObject("Table");
+        table.transform.SetParent(root.transform, false);
+        CreatePrimitive("Top", PrimitiveType.Cube, table.transform,
+            new Vector3(0f, 0.72f, 0f), new Vector3(1.25f, 0.06f, 0.5f), s_Wood);
+        for (int i = 0; i < 4; i++)
+        {
+            float x = (i % 2 == 0 ? -1f : 1f) * 0.55f;
+            float z = (i / 2 == 0 ? -1f : 1f) * 0.18f;
+            CreatePrimitive($"Leg_{i}", PrimitiveType.Cylinder, table.transform,
+                new Vector3(x, 0.36f, z), new Vector3(0.05f, 0.36f, 0.05f), s_Trunk);
+        }
+
+        CreateGrabbable("Grab Cube", PrimitiveType.Cube, root.transform,
+            new Vector3(-0.42f, 0.87f, 0f), Vector3.one * 0.16f, s_Metal);
+        CreateGrabbable("Grab Sphere", PrimitiveType.Sphere, root.transform,
+            new Vector3(-0.14f, 0.87f, 0f), Vector3.one * 0.18f, s_Treasure);
+        CreateGrabbable("Grab Capsule", PrimitiveType.Capsule, root.transform,
+            new Vector3(0.14f, 0.87f, 0f), new Vector3(0.14f, 0.18f, 0.14f), s_Shield);
+    }
+
+    static GameObject CreateGrabbable(string name, PrimitiveType type, Transform parent, Vector3 localPosition, Vector3 localScale, Material material)
+    {
+        var go = CreatePrimitive(name, type, parent, localPosition, localScale, material);
+
+        var rigidbody = go.AddComponent<Rigidbody>();
+        rigidbody.mass = 0.4f;
+        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+        var grabbable = go.AddComponent<Grabbable>();
+        var grab = go.AddComponent<GrabInteractable>();
+        grab.InjectRigidbody(rigidbody);
+        grab.InjectOptionalPointableElement(grabbable);
+
+        var handGrab = go.AddComponent<HandGrabInteractable>();
+        handGrab.InjectRigidbody(rigidbody);
+        handGrab.InjectOptionalPointableElement(grabbable);
+
+        return go;
+    }
+
+    /// <summary>
+    /// A grabbable cylinder that banishes any enemy it touches.
+    /// </summary>
+    static void BuildEnemyBanisher(Transform parent)
+    {
+        var root = new GameObject("Banishing Cylinder");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0.42f, 0.87f, 1.4f);
+
+        var visual = CreatePrimitive("Cylinder", PrimitiveType.Cylinder, root.transform,
+            Vector3.zero, new Vector3(0.15f, 0.22f, 0.15f), s_Moon);
+        Object.DestroyImmediate(visual.GetComponent<Collider>());
+
+        var rigidbody = root.AddComponent<Rigidbody>();
+        rigidbody.mass = 0.4f;
+        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+        var collider = root.AddComponent<SphereCollider>();
+        collider.radius = 0.16f;
+
+        var grabbable = root.AddComponent<Grabbable>();
+        var grab = root.AddComponent<GrabInteractable>();
+        grab.InjectRigidbody(rigidbody);
+        grab.InjectOptionalPointableElement(grabbable);
+
+        var handGrab = root.AddComponent<HandGrabInteractable>();
+        handGrab.InjectRigidbody(rigidbody);
+        handGrab.InjectOptionalPointableElement(grabbable);
+
+        root.AddComponent<EnemyBanisher>();
+    }
+
+    static GameObject CreatePrimitive(string name, PrimitiveType type, Transform parent, Vector3 localPosition, Vector3 localScale, Material material)
+    {
+        var go = GameObject.CreatePrimitive(type);
+        go.name = name;
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPosition;
+        go.transform.localScale = localScale;
+
+        if (material != null)
+            go.GetComponent<Renderer>().sharedMaterial = material;
+
+        return go;
+    }
+
+    static void RemoveCollider(GameObject go)
+    {
+        var collider = go.GetComponent<Collider>();
+        if (collider != null)
+            Object.DestroyImmediate(collider);
+    }
+
+    static Material CreateMaterial(string name, Color color, float metallic, float smoothness, Color? emission = null, string shaderName = "Universal Render Pipeline/Lit")
+    {
+        var shader = Shader.Find(shaderName) ?? Shader.Find("Standard");
+        var material = new Material(shader) { name = name };
+        material.color = color;
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Metallic"))
+            material.SetFloat("_Metallic", metallic);
+        if (material.HasProperty("_Smoothness"))
+            material.SetFloat("_Smoothness", smoothness);
+        if (emission.HasValue && material.HasProperty("_EmissionColor"))
+        {
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", emission.Value);
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+        }
+
+        var path = $"{k_MaterialFolder}/{name}.mat";
+        AssetDatabase.CreateAsset(material, path);
+        return material;
+    }
+
+    static void Wire(Object target, string propertyName, Object value)
+    {
+        var serialized = new SerializedObject(target);
+        var property = serialized.FindProperty(propertyName);
+        if (property == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Property '{propertyName}' not found on {target.name}");
+            return;
+        }
+
+        property.objectReferenceValue = value;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    static void AddToBuildSettings(string scenePath)
+    {
+        var scenes = new List<EditorBuildSettingsScene>
+        {
+            new EditorBuildSettingsScene(scenePath, true)
+        };
+
+        const string sampleScene = "Assets/Scenes/SampleScene.unity";
+        if (File.Exists(sampleScene))
+            scenes.Add(new EditorBuildSettingsScene(sampleScene, false));
+
+        EditorBuildSettings.scenes = scenes.ToArray();
+    }
+
+    static void EnsureFolder(string path)
+    {
+        if (AssetDatabase.IsValidFolder(path))
+            return;
+
+        var parent = Path.GetDirectoryName(path)?.Replace('\\', '/');
+        var leaf = Path.GetFileName(path);
+        if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(leaf))
+            return;
+
+        EnsureFolder(parent);
+        AssetDatabase.CreateFolder(parent, leaf);
+    }
+}
