@@ -26,7 +26,6 @@ public static class GameSceneBuilder
     static Material s_Stone;
     static Material s_Tent;
     static Material s_Trunk;
-    static Material s_Foliage;
     static Material s_Metal;
     static Material s_DarkMetal;
     static Material s_Shield;
@@ -51,12 +50,14 @@ public static class GameSceneBuilder
         var rig = CreateXrRig(out var interactionRig);
         ConfigureCamera(rig);
         ConfigureLocomotion(interactionRig);
+        AddInteractorHaptics(interactionRig);
 
         CreateMaterials();
 
         var environment = new GameObject("Environment").transform;
         BuildGround(environment);
         BuildPerimeter(environment);
+        BuildForest(environment);
         BuildMoon(environment);
         var campfire = BuildCampfire(environment);
         BuildLogPile(environment);
@@ -199,6 +200,23 @@ public static class GameSceneBuilder
             Debug.LogWarning("[GameSceneBuilder] 'Locomotor' not found on the interaction rig.");
     }
 
+    /// <summary>
+    /// Adds controller-vibration feedback to every per-hand grab interactor in the rig
+    /// (controller grab and hand grab alike), so grabbing, releasing, and hovering any
+    /// interactable in the scene gives the player haptic feedback in the right hand.
+    /// </summary>
+    static void AddInteractorHaptics(GameObject interactionRig)
+    {
+        if (interactionRig == null)
+            return;
+
+        foreach (var interactor in interactionRig.GetComponentsInChildren<GrabInteractor>(true))
+            interactor.gameObject.AddComponent<InteractorHaptics>();
+
+        foreach (var interactor in interactionRig.GetComponentsInChildren<HandGrabInteractor>(true))
+            interactor.gameObject.AddComponent<InteractorHaptics>();
+    }
+
     static Transform FindByName(Transform root, string namePart)
     {
         foreach (var t in root.GetComponentsInChildren<Transform>(true))
@@ -226,7 +244,6 @@ public static class GameSceneBuilder
         s_Stone = CreateMaterial("M_Stone", new Color(0.22f, 0.22f, 0.24f), 0f, 0.1f);
         s_Tent = CreateMaterial("M_Tent", new Color(0.16f, 0.13f, 0.11f), 0f, 0.1f);
         s_Trunk = CreateMaterial("M_Trunk", new Color(0.12f, 0.08f, 0.05f), 0f, 0.1f);
-        s_Foliage = CreateMaterial("M_Foliage", new Color(0.06f, 0.12f, 0.06f), 0f, 0.1f);
         s_Metal = CreateMaterial("M_Metal", new Color(0.6f, 0.55f, 0.3f), 0.8f, 0.6f);
         s_DarkMetal = CreateMaterial("M_DarkMetal", new Color(0.14f, 0.13f, 0.12f), 0.7f, 0.4f);
         s_Shield = CreateMaterial("M_Shield", new Color(0.32f, 0.2f, 0.11f), 0.1f, 0.3f);
@@ -264,24 +281,124 @@ public static class GameSceneBuilder
             CreatePrimitive($"Rock_{i}", PrimitiveType.Sphere, rocks, rockPositions[i],
                 new Vector3(s, s * 0.7f, s), s_Stone);
         }
+    }
 
-        var trees = new GameObject("Trees").transform;
-        trees.SetParent(parent, false);
-        for (int i = 0; i < 10; i++)
+    const string k_ForestFbxPath = "Assets/Models/Bosque/bosque.fbx";
+
+    static readonly string[] k_ForestNamePrefixes =
+    {
+        "OakTree", "SpruceTree", "DeadOak", "BigRock", "Rock"
+    };
+
+    /// <summary>
+    /// Scatters copies of the trees and rocks from bosque.fbx (an external forest asset
+    /// pack) in a ring around the camp, replacing the old primitive tree ring. bosque.fbx
+    /// itself is a prop kit: every tree/rock sits stacked at the origin rather than
+    /// arranged into a scene, so this places multiple randomized instances of each rather
+    /// than reusing the source placement. Only the flora/rock pieces are used; the pack's
+    /// camp props (barrels, crates) and its hunter character/camera/light are discarded
+    /// since they aren't part of the forest.
+    /// </summary>
+    static void BuildForest(Transform parent)
+    {
+        var source = AssetDatabase.LoadAssetAtPath<GameObject>(k_ForestFbxPath);
+        if (source == null)
         {
-            float angle = i / 10f * Mathf.PI * 2f;
-            float radius = 9f + (i % 2) * 2.5f;
-            var position = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
-
-            var tree = new GameObject($"Tree_{i}");
-            tree.transform.SetParent(trees, false);
-            tree.transform.localPosition = position;
-
-            CreatePrimitive("Trunk", PrimitiveType.Cylinder, tree.transform,
-                new Vector3(0f, 1.5f, 0f), new Vector3(0.3f, 1.5f, 0.3f), s_Trunk);
-            CreatePrimitive("Canopy", PrimitiveType.Sphere, tree.transform,
-                new Vector3(0f, 3.4f, 0f), new Vector3(2.6f, 2.2f, 2.6f), s_Foliage);
+            Debug.LogWarning($"[GameSceneBuilder] Forest model not found at {k_ForestFbxPath}; skipping forest.");
+            return;
         }
+
+        var sourceInstance = (GameObject)PrefabUtility.InstantiatePrefab(source);
+
+        // Collect only the top-most transform of each placed tree/rock (its mesh lives on
+        // material-split children further down, so a whole matching subtree is one piece).
+        var templates = new List<Transform>();
+        foreach (Transform t in sourceInstance.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == sourceInstance.transform)
+                continue;
+            if (!StartsWithAny(t.name, k_ForestNamePrefixes))
+                continue;
+            if (t.parent != null && StartsWithAny(t.parent.name, k_ForestNamePrefixes))
+                continue;
+            if (t.GetComponentsInChildren<Renderer>().Length == 0)
+                continue;
+
+            templates.Add(t);
+        }
+
+        if (templates.Count == 0)
+        {
+            Debug.LogWarning("[GameSceneBuilder] No tree/rock meshes matched in bosque.fbx; skipping forest.");
+            Object.DestroyImmediate(sourceInstance);
+            return;
+        }
+
+        // Each template's own mesh data already carries a baked vertical offset (the
+        // source kit wasn't authored with its pivots on the ground), so measure how far
+        // each one needs to be lifted to sit on y = 0 before scattering any copies.
+        var groundOffsets = new Dictionary<Transform, float>();
+        foreach (var template in templates)
+            groundOffsets[template] = -LocalMinY(template);
+
+        const int k_InstanceCount = 30;
+        const float k_MinRadius = 8f;
+        const float k_MaxRadius = 19f;
+        const float k_MinScale = 0.8f;
+        const float k_MaxScale = 1.3f;
+
+        var forest = new GameObject("Forest (bosque.fbx)").transform;
+        forest.SetParent(parent, false);
+
+        var random = new System.Random(1);
+        int triangleCount = 0;
+
+        for (int i = 0; i < k_InstanceCount; i++)
+        {
+            var template = templates[random.Next(templates.Count)];
+            var copy = (GameObject)Object.Instantiate(template.gameObject, forest);
+            copy.name = template.name;
+
+            float angle = (float)(random.NextDouble() * Mathf.PI * 2.0);
+            float radius = Mathf.Lerp(k_MinRadius, k_MaxRadius, (float)random.NextDouble());
+            float scale = Mathf.Lerp(k_MinScale, k_MaxScale, (float)random.NextDouble());
+
+            copy.transform.localPosition = new Vector3(
+                Mathf.Cos(angle) * radius,
+                groundOffsets[template] * scale,
+                Mathf.Sin(angle) * radius);
+            copy.transform.localRotation = Quaternion.Euler(0f, (float)(random.NextDouble() * 360.0), 0f);
+            copy.transform.localScale = Vector3.one * scale;
+
+            foreach (var meshFilter in copy.GetComponentsInChildren<MeshFilter>())
+                if (meshFilter.sharedMesh != null)
+                    triangleCount += meshFilter.sharedMesh.triangles.Length / 3;
+        }
+
+        Object.DestroyImmediate(sourceInstance);
+
+        Debug.Log($"[GameSceneBuilder] Placed {k_InstanceCount} forest instances from bosque.fbx " +
+            $"(~{triangleCount} triangles). Check the frame rate on device; trim k_InstanceCount if it's too heavy for Quest.");
+    }
+
+    static bool StartsWithAny(string name, string[] prefixes)
+    {
+        foreach (var prefix in prefixes)
+            if (name.StartsWith(prefix))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// The lowest point of the given (untransformed, origin-local) template's combined
+    /// renderer bounds, i.e. how far its baked-in mesh geometry dips below its pivot.
+    /// </summary>
+    static float LocalMinY(Transform template)
+    {
+        float minY = float.PositiveInfinity;
+        foreach (var renderer in template.GetComponentsInChildren<Renderer>())
+            minY = Mathf.Min(minY, renderer.bounds.min.y);
+        return minY;
     }
 
     static CampfireFuel BuildCampfire(Transform parent)

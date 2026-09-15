@@ -12,6 +12,10 @@ public class PlayerHealth : MonoBehaviour
     [SerializeField] UnityEvent m_OnDamaged = new UnityEvent();
     [SerializeField] UnityEvent m_OnDied = new UnityEvent();
 
+    [Header("Feel")]
+    [SerializeField] float m_HitHapticAmplitude = 0.7f;
+    [SerializeField] float m_HitHapticDuration = 0.15f;
+
     float m_Health;
 
     public float MaxHealth => m_MaxHealth;
@@ -32,6 +36,7 @@ public class PlayerHealth : MonoBehaviour
             return;
 
         m_Health = Mathf.Max(0f, m_Health - amount);
+        HapticsUtility.Pulse(OVRInput.Controller.Touch, m_HitHapticAmplitude, m_HitHapticDuration);
         m_OnDamaged.Invoke();
 
         if (m_Health <= 0f)

@@ -12,4 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6edc6f83a19c7584587e036776b94d6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.XR.OpenXR.Editor::UnityEditor.XR.OpenXR.BuildProfileUtilityOpenXR
-  isMetaQuestInitialized: 1
+  isMetaQuestInitialized: 0
