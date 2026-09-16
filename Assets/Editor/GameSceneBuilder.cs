@@ -62,12 +62,10 @@ public static class GameSceneBuilder
         var campfire = BuildCampfire(environment);
         var logPile = BuildLogPile(environment);
         BuildTutorialLog(campfire.transform);
-        BuildTent(environment);
-        BuildCampProps(environment);
-        BuildTreasure(environment);
-        BuildInteractables(environment);
-        BuildEnemyBanisher(environment);
-        BuildShield(interactionRig);
+        var tent = BuildTent(environment);
+        var campProps = BuildCampProps(environment);
+        var treasure = BuildTreasure(environment);
+        var weaponRack = BuildWeaponRack(environment);
 
         if (rig != null)
             rig.AddComponent<PlayerHealth>();
@@ -76,6 +74,8 @@ public static class GameSceneBuilder
         var night = systems.AddComponent<NightEnvironmentController>();
         Wire(night, "m_Campfire", campfire);
         Wire(night, "m_MoonLight", moonLight);
+
+        BuildCampReveal(systems, campfire, tent, campProps, treasure, weaponRack);
 
         BuildSkeletonSpawner(systems, rig, campfire);
         BuildLogSpawner(systems, logPile);
@@ -171,6 +171,14 @@ public static class GameSceneBuilder
             var headOffset = serialized.FindProperty("_headPoseRelativeOffsetTranslation");
             if (headOffset != null)
                 headOffset.vector3Value = new Vector3(0f, 0.15f, 0f);
+
+            // Without this, hand poses aren't populated from controller input at all,
+            // so the hand meshes the Interaction SDK's comprehensive rig ships with
+            // never render while holding Touch controllers: the player sees the
+            // world but no hands, even though they're grabbing things correctly.
+            var handPoses = serialized.FindProperty("controllerDrivenHandPosesType");
+            if (handPoses != null)
+                handPoses.enumValueIndex = (int)OVRManager.ControllerDrivenHandPosesType.ConformingToController;
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
@@ -668,7 +676,7 @@ public static class GameSceneBuilder
         return prefab;
     }
 
-    static void BuildTent(Transform parent)
+    static GameObject BuildTent(Transform parent)
     {
         var tent = new GameObject("Tent");
         tent.transform.SetParent(parent, false);
@@ -688,6 +696,8 @@ public static class GameSceneBuilder
         var bedroll = CreatePrimitive("Bedroll", PrimitiveType.Cube, tent.transform,
             new Vector3(0f, 0.05f, 0.2f), new Vector3(0.5f, 0.1f, 0.95f), s_Tent);
         RemoveCollider(bedroll);
+
+        return tent;
     }
 
     static void CreateTentPanel(Transform parent, string name, Vector3 position, float zAngle)
@@ -697,7 +707,7 @@ public static class GameSceneBuilder
         panel.transform.localRotation = Quaternion.Euler(0f, 0f, zAngle);
     }
 
-    static void BuildCampProps(Transform parent)
+    static GameObject BuildCampProps(Transform parent)
     {
         var props = new GameObject("Camp Props").transform;
         props.SetParent(parent, false);
@@ -728,6 +738,8 @@ public static class GameSceneBuilder
             stake.transform.localRotation = Quaternion.Euler((i % 3 - 1) * 4f, 0f, (i % 2) * 4f);
             RemoveCollider(stake);
         }
+
+        return props.gameObject;
     }
 
     static GameObject BuildSkeletonPrefab()
@@ -801,6 +813,23 @@ public static class GameSceneBuilder
         return prefab;
     }
 
+    /// <summary>
+    /// Hides everything but the (unlit) campfire and log pile until the player
+    /// throws the first log in, then reveals the rest of the camp at once.
+    /// </summary>
+    static void BuildCampReveal(GameObject systems, CampfireFuel campfire, params GameObject[] objectsToReveal)
+    {
+        var reveal = systems.AddComponent<CampRevealController>();
+        Wire(reveal, "m_Campfire", campfire);
+
+        var serialized = new SerializedObject(reveal);
+        var array = serialized.FindProperty("m_ObjectsToReveal");
+        array.arraySize = objectsToReveal.Length;
+        for (int i = 0; i < objectsToReveal.Length; i++)
+            array.GetArrayElementAtIndex(i).objectReferenceValue = objectsToReveal[i];
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
     static void BuildSkeletonSpawner(GameObject systems, GameObject rig, CampfireFuel campfire)
     {
         var prefab = BuildSkeletonPrefab();
@@ -819,7 +848,7 @@ public static class GameSceneBuilder
         }
     }
 
-    static void BuildTreasure(Transform parent)
+    static GameObject BuildTreasure(Transform parent)
     {
         var treasure = new GameObject("Treasure Pedestal");
         treasure.transform.SetParent(parent, false);
@@ -829,110 +858,74 @@ public static class GameSceneBuilder
             new Vector3(0f, 0.5f, 0f), new Vector3(0.7f, 0.5f, 0.7f), s_Stone);
         CreatePrimitive("Chest", PrimitiveType.Cube, treasure.transform,
             new Vector3(0f, 1.2f, 0f), new Vector3(0.6f, 0.4f, 0.45f), s_Treasure);
+
+        return treasure;
     }
 
-    static void BuildShield(GameObject rig)
+    // To the player's right, close enough to reach without walking, clear of the
+    // log pile and bench on the same side.
+    static readonly Vector3 k_WeaponRackPosition = new Vector3(1.6f, 0f, 0f);
+
+    /// <summary>
+    /// The stand holding the sword and shield until the camp is revealed. Hidden
+    /// (along with its contents) by CampRevealController until the player feeds
+    /// the fire for the first time.
+    /// </summary>
+    static GameObject BuildWeaponRack(Transform parent)
     {
-        if (rig == null)
-            return;
+        var rack = new GameObject("Weapon Rack");
+        rack.transform.SetParent(parent, false);
+        rack.transform.localPosition = k_WeaponRackPosition;
 
-        var leftController = FindByName(rig.transform, "LeftHandAnchor")
-            ?? FindByName(rig.transform, "LeftControllerAnchor")
-            ?? FindByName(rig.transform, "ComprehensiveInteractorsLeft")
-            ?? FindByName(rig.transform, "LeftController");
-        if (leftController == null)
-        {
-            Debug.LogWarning("[GameSceneBuilder] Left hand/controller anchor not found; shield not attached.");
-            return;
-        }
+        CreatePrimitive("Rack Base", PrimitiveType.Cylinder, rack.transform,
+            new Vector3(0f, 0.05f, 0f), new Vector3(0.3f, 0.05f, 0.3f), s_Stone);
+        CreatePrimitive("Rack Post", PrimitiveType.Cylinder, rack.transform,
+            new Vector3(0f, 0.6f, 0f), new Vector3(0.05f, 0.6f, 0.05f), s_Trunk);
 
-        var shield = new GameObject("Shield");
-        shield.transform.SetParent(leftController, false);
-        shield.transform.localPosition = new Vector3(0f, -0.02f, 0.12f);
-        shield.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        BuildSword(rack.transform);
+        BuildShield(rack.transform);
 
-        var disc = CreatePrimitive("Shield Disc", PrimitiveType.Cylinder, shield.transform,
-            Vector3.zero, new Vector3(0.5f, 0.03f, 0.5f), s_Shield);
-        var boss = CreatePrimitive("Shield Boss", PrimitiveType.Sphere, shield.transform,
-            Vector3.zero, new Vector3(0.14f, 0.14f, 0.14f), s_Metal);
-
-        Object.DestroyImmediate(disc.GetComponent<Collider>());
-        Object.DestroyImmediate(boss.GetComponent<Collider>());
-
-        shield.AddComponent<Shield>();
+        return rack;
     }
 
     /// <summary>
-    /// A low table with simple grabbable shapes (cube, sphere, capsule) so the
-    /// player has something to pick up with the controllers or hands.
+    /// The player's melee weapon: banishes any enemy it touches (see
+    /// EnemyBanisher). Leans against the weapon rack's post until grabbed. The
+    /// root pivot sits at the blade's centre so EnemyBanisher's overlap check
+    /// (centred on transform.position) actually covers the blade, not just the hilt.
     /// </summary>
-    static void BuildInteractables(Transform parent)
+    static void BuildSword(Transform parent)
     {
-        var root = new GameObject("Interactables");
+        var root = new GameObject("Sword");
         root.transform.SetParent(parent, false);
-        root.transform.localPosition = new Vector3(0f, 0f, 1.4f);
+        root.transform.localPosition = new Vector3(0.1f, 0.75f, 0.05f);
+        root.transform.localRotation = Quaternion.Euler(0f, 0f, 15f);
 
-        var table = new GameObject("Table");
-        table.transform.SetParent(root.transform, false);
-        CreatePrimitive("Top", PrimitiveType.Cube, table.transform,
-            new Vector3(0f, 0.72f, 0f), new Vector3(1.25f, 0.06f, 0.5f), s_Wood);
-        for (int i = 0; i < 4; i++)
-        {
-            float x = (i % 2 == 0 ? -1f : 1f) * 0.55f;
-            float z = (i / 2 == 0 ? -1f : 1f) * 0.18f;
-            CreatePrimitive($"Leg_{i}", PrimitiveType.Cylinder, table.transform,
-                new Vector3(x, 0.36f, z), new Vector3(0.05f, 0.36f, 0.05f), s_Trunk);
-        }
+        var blade = CreatePrimitive("Blade", PrimitiveType.Cube, root.transform,
+            Vector3.zero, new Vector3(0.04f, 0.5f, 0.012f), s_Metal);
+        Object.DestroyImmediate(blade.GetComponent<Collider>());
 
-        CreateGrabbable("Grab Cube", PrimitiveType.Cube, root.transform,
-            new Vector3(-0.42f, 0.87f, 0f), Vector3.one * 0.16f, s_Metal);
-        CreateGrabbable("Grab Sphere", PrimitiveType.Sphere, root.transform,
-            new Vector3(-0.14f, 0.87f, 0f), Vector3.one * 0.18f, s_Treasure);
-        CreateGrabbable("Grab Capsule", PrimitiveType.Capsule, root.transform,
-            new Vector3(0.14f, 0.87f, 0f), new Vector3(0.14f, 0.18f, 0.14f), s_Shield);
-    }
+        var guard = CreatePrimitive("Guard", PrimitiveType.Cube, root.transform,
+            new Vector3(0f, -0.26f, 0f), new Vector3(0.16f, 0.015f, 0.03f), s_DarkMetal);
+        Object.DestroyImmediate(guard.GetComponent<Collider>());
 
-    static GameObject CreateGrabbable(string name, PrimitiveType type, Transform parent, Vector3 localPosition, Vector3 localScale, Material material)
-    {
-        var go = CreatePrimitive(name, type, parent, localPosition, localScale, material);
+        var grip = CreatePrimitive("Grip", PrimitiveType.Cylinder, root.transform,
+            new Vector3(0f, -0.35f, 0f), new Vector3(0.025f, 0.09f, 0.025f), s_Trunk);
+        Object.DestroyImmediate(grip.GetComponent<Collider>());
 
-        var rigidbody = go.AddComponent<Rigidbody>();
-        rigidbody.mass = 0.4f;
-        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
-        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-        var grabbable = go.AddComponent<Grabbable>();
-        var grab = go.AddComponent<GrabInteractable>();
-        grab.InjectRigidbody(rigidbody);
-        grab.InjectOptionalPointableElement(grabbable);
-
-        var handGrab = go.AddComponent<HandGrabInteractable>();
-        handGrab.InjectRigidbody(rigidbody);
-        handGrab.InjectOptionalPointableElement(grabbable);
-
-        return go;
-    }
-
-    /// <summary>
-    /// A grabbable cylinder that banishes any enemy it touches.
-    /// </summary>
-    static void BuildEnemyBanisher(Transform parent)
-    {
-        var root = new GameObject("Banishing Cylinder");
-        root.transform.SetParent(parent, false);
-        root.transform.localPosition = new Vector3(0.42f, 0.87f, 1.4f);
-
-        var visual = CreatePrimitive("Cylinder", PrimitiveType.Cylinder, root.transform,
-            Vector3.zero, new Vector3(0.15f, 0.22f, 0.15f), s_Moon);
-        Object.DestroyImmediate(visual.GetComponent<Collider>());
+        var pommel = CreatePrimitive("Pommel", PrimitiveType.Sphere, root.transform,
+            new Vector3(0f, -0.47f, 0f), new Vector3(0.035f, 0.035f, 0.035f), s_DarkMetal);
+        Object.DestroyImmediate(pommel.GetComponent<Collider>());
 
         var rigidbody = root.AddComponent<Rigidbody>();
-        rigidbody.mass = 0.4f;
+        rigidbody.mass = 0.6f;
         rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
         rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
-        var collider = root.AddComponent<SphereCollider>();
-        collider.radius = 0.16f;
+        var collider = root.AddComponent<CapsuleCollider>();
+        collider.center = new Vector3(0f, -0.11f, 0f);
+        collider.height = 0.75f;
+        collider.radius = 0.045f;
 
         var grabbable = root.AddComponent<Grabbable>();
         var grab = root.AddComponent<GrabInteractable>();
@@ -944,6 +937,41 @@ public static class GameSceneBuilder
         handGrab.InjectOptionalPointableElement(grabbable);
 
         root.AddComponent<EnemyBanisher>();
+    }
+
+    /// <summary>
+    /// Grabbable shield, leaning at the base of the weapon rack until picked up.
+    /// The disc keeps its own default collider (matches its shape); only the
+    /// decorative boss has its collider stripped.
+    /// </summary>
+    static void BuildShield(Transform parent)
+    {
+        var shield = new GameObject("Shield");
+        shield.transform.SetParent(parent, false);
+        shield.transform.localPosition = new Vector3(-0.22f, 0.12f, 0.08f);
+        shield.transform.localRotation = Quaternion.Euler(75f, 0f, -10f);
+
+        var boss = CreatePrimitive("Shield Boss", PrimitiveType.Sphere, shield.transform,
+            Vector3.zero, new Vector3(0.14f, 0.14f, 0.14f), s_Metal);
+        Object.DestroyImmediate(boss.GetComponent<Collider>());
+        CreatePrimitive("Shield Disc", PrimitiveType.Cylinder, shield.transform,
+            Vector3.zero, new Vector3(0.5f, 0.03f, 0.5f), s_Shield);
+
+        var rigidbody = shield.AddComponent<Rigidbody>();
+        rigidbody.mass = 0.7f;
+        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+        var grabbable = shield.AddComponent<Grabbable>();
+        var grab = shield.AddComponent<GrabInteractable>();
+        grab.InjectRigidbody(rigidbody);
+        grab.InjectOptionalPointableElement(grabbable);
+
+        var handGrab = shield.AddComponent<HandGrabInteractable>();
+        handGrab.InjectRigidbody(rigidbody);
+        handGrab.InjectOptionalPointableElement(grabbable);
+
+        shield.AddComponent<Shield>();
     }
 
     static GameObject CreatePrimitive(string name, PrimitiveType type, Transform parent, Vector3 localPosition, Vector3 localScale, Material material)
