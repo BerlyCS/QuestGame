@@ -17,6 +17,10 @@ public class EnemyBanisher : MonoBehaviour
     [Tooltip("Layers that can contain enemies.")]
     LayerMask m_EnemyLayers = ~0;
 
+    [Header("Feel")]
+    [SerializeField] float m_BanishHapticAmplitude = 0.55f;
+    [SerializeField] float m_BanishHapticDuration = 0.09f;
+
     readonly Collider[] m_Overlaps = new Collider[16];
 
     void Update()
@@ -27,8 +31,13 @@ public class EnemyBanisher : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             var skeleton = m_Overlaps[i].GetComponentInParent<Skeleton>();
-            if (skeleton != null)
-                skeleton.Banish();
+            if (skeleton == null || !skeleton.IsAlive)
+                continue;
+
+            skeleton.Banish();
+
+            if (InteractorHaptics.TryGetHoldingController(gameObject, out var controller))
+                HapticsUtility.Pulse(controller, m_BanishHapticAmplitude, m_BanishHapticDuration);
         }
     }
 
