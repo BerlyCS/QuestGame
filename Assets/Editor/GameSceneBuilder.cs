@@ -60,7 +60,8 @@ public static class GameSceneBuilder
         BuildForest(environment);
         BuildMoon(environment);
         var campfire = BuildCampfire(environment);
-        BuildLogPile(environment);
+        var logPile = BuildLogPile(environment);
+        BuildTutorialLog(campfire.transform);
         BuildTent(environment);
         BuildCampProps(environment);
         BuildTreasure(environment);
@@ -76,7 +77,8 @@ public static class GameSceneBuilder
         Wire(night, "m_Campfire", campfire);
         Wire(night, "m_MoonLight", moonLight);
 
-        BuildSkeletonSpawner(systems, rig);
+        BuildSkeletonSpawner(systems, rig, campfire);
+        BuildLogSpawner(systems, logPile);
 
         AssetDatabase.SaveAssets();
 
@@ -160,21 +162,41 @@ public static class GameSceneBuilder
             var serialized = new SerializedObject(manager);
             var origin = serialized.FindProperty("_trackingOriginType");
             if (origin != null)
-            {
                 origin.intValue = (int)OVRManager.TrackingOrigin.FloorLevel;
-                serialized.ApplyModifiedPropertiesWithoutUndo();
-            }
+
+            // FloorLevel derives head height from the headset's Guardian floor
+            // calibration, which can sit lower than the player's real eye level.
+            // Nudge the head pose up a bit so the view reads as normal standing
+            // height instead of a crouched/child's-eye view.
+            var headOffset = serialized.FindProperty("_headPoseRelativeOffsetTranslation");
+            if (headOffset != null)
+                headOffset.vector3Value = new Vector3(0f, 0.15f, 0f);
+
+            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         return cameraRig;
     }
 
+    /// <summary>
+    /// Only CenterEyeAnchor's camera actually renders (LeftEyeAnchor/RightEyeAnchor stay
+    /// disabled until real stereo rendering kicks in on-device), so it must be targeted by
+    /// name rather than GetComponentInChildren&lt;Camera&gt;(), which would silently match
+    /// LeftEyeAnchor's disabled-but-still-findable camera instead and leave the camera
+    /// that's actually used on its default skybox background.
+    /// </summary>
     static void ConfigureCamera(GameObject rig)
     {
         if (rig == null)
             return;
 
-        var camera = rig.GetComponentInChildren<Camera>();
+        var centerEye = FindByName(rig.transform, "CenterEyeAnchor");
+        var camera = centerEye != null ? centerEye.GetComponent<Camera>() : null;
+        if (camera == null)
+        {
+            Debug.LogWarning("[GameSceneBuilder] CenterEyeAnchor camera not found; falling back to first camera in rig.");
+            camera = rig.GetComponentInChildren<Camera>();
+        }
         if (camera == null)
             return;
 
@@ -336,10 +358,18 @@ public static class GameSceneBuilder
 
         // Each template's own mesh data already carries a baked vertical offset (the
         // source kit wasn't authored with its pivots on the ground), so measure how far
-        // each one needs to be lifted to sit on y = 0 before scattering any copies.
+        // each one needs to be lifted to sit on y = 0 before scattering any copies. The
+        // pack is also authored Z-up and only stands upright in the source file thanks to
+        // a corrective rotation on an ancestor ("Sketchfab_model"); cloning just the
+        // template transform drops that ancestor, so capture the rotation here and
+        // reapply it below, or every copy comes out lying on its side.
         var groundOffsets = new Dictionary<Transform, float>();
+        var uprightRotations = new Dictionary<Transform, Quaternion>();
         foreach (var template in templates)
+        {
             groundOffsets[template] = -LocalMinY(template);
+            uprightRotations[template] = template.rotation;
+        }
 
         const int k_InstanceCount = 30;
         const float k_MinRadius = 8f;
@@ -367,7 +397,8 @@ public static class GameSceneBuilder
                 Mathf.Cos(angle) * radius,
                 groundOffsets[template] * scale,
                 Mathf.Sin(angle) * radius);
-            copy.transform.localRotation = Quaternion.Euler(0f, (float)(random.NextDouble() * 360.0), 0f);
+            copy.transform.localRotation =
+                Quaternion.Euler(0f, (float)(random.NextDouble() * 360.0), 0f) * uprightRotations[template];
             copy.transform.localScale = Vector3.one * scale;
 
             foreach (var meshFilter in copy.GetComponentsInChildren<MeshFilter>())
@@ -527,22 +558,86 @@ public static class GameSceneBuilder
         renderer.sharedMaterial = s_Flame;
     }
 
-    static void BuildLogPile(Transform parent)
+    static GameObject s_LogPrefab;
+
+    // The pile sits mostly to the player's right (not diagonally ahead) and close
+    // enough to reach without walking, since the player never leaves the campfire.
+    static readonly Vector3 k_LogPileGroundPosition = new Vector3(1.0f, 0f, 0.5f);
+    const float k_LogStandHeight = 0.85f;
+
+    static Transform BuildLogPile(Transform parent)
     {
-        var logPrefab = BuildLogPrefab();
+        s_LogPrefab = BuildLogPrefab();
+
+        BuildLogStand(parent);
 
         var pile = new GameObject("Log Pile");
         pile.transform.SetParent(parent, false);
-        pile.transform.localPosition = new Vector3(1.6f, 0f, 1.7f);
+        // Logs stack starting at the stand's top surface rather than at y = 0, so the
+        // whole pile sits at hand height instead of down at the player's feet.
+        pile.transform.localPosition = k_LogPileGroundPosition + new Vector3(0f, k_LogStandHeight, 0f);
 
         for (int i = 0; i < 6; i++)
         {
             int row = i / 3;
             int column = i % 3;
-            var log = (GameObject)PrefabUtility.InstantiatePrefab(logPrefab, pile.transform);
+            var log = (GameObject)PrefabUtility.InstantiatePrefab(s_LogPrefab, pile.transform);
             log.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             log.transform.localPosition = new Vector3((column - 1) * 0.16f, 0.08f + row * 0.13f, row % 2 == 1 ? 0.06f : 0f);
         }
+
+        return pile.transform;
+    }
+
+    /// <summary>
+    /// A stubby stump the pile rests on, purely so the logs sit at hand height instead
+    /// of on the ground; its default primitive collider is what the logs' rigidbodies
+    /// actually settle on.
+    /// </summary>
+    static void BuildLogStand(Transform parent)
+    {
+        CreatePrimitive("Log Stand", PrimitiveType.Cylinder, parent,
+            k_LogPileGroundPosition + new Vector3(0f, k_LogStandHeight * 0.5f, 0f),
+            new Vector3(0.6f, k_LogStandHeight * 0.5f, 0.6f), s_Trunk);
+    }
+
+    /// <summary>
+    /// A single log already shoved partway toward the fire when the player wakes up: a
+    /// silent invitation to finish the job instead of a tutorial prompt. It's placed
+    /// close enough to already overlap the fuel trigger, but Log requires a grab before
+    /// it can be consumed, so it just sits there as a hint until the player picks it up
+    /// and it catches.
+    /// </summary>
+    static void BuildTutorialLog(Transform campfireRoot)
+    {
+        if (s_LogPrefab == null)
+            return;
+
+        // Local to the campfire root, whose origin is the fire itself: on the same
+        // (right-hand) side as the log pile, and toward the player rather than past
+        // the fire, as if it had been dragged partway in from the pile.
+        var localPosition = new Vector3(0.45f, 0.14f, -0.35f);
+        var towardFireCenter = -localPosition;
+        float yaw = Mathf.Atan2(towardFireCenter.x, towardFireCenter.z) * Mathf.Rad2Deg;
+
+        var log = (GameObject)PrefabUtility.InstantiatePrefab(s_LogPrefab, campfireRoot);
+        log.name = "Tutorial Log";
+        log.transform.localPosition = localPosition;
+        log.transform.localRotation = Quaternion.Euler(90f, yaw, 0f);
+    }
+
+    /// <summary>
+    /// Wood is meant to be infinite: whenever a log from the pile is burned,
+    /// LogSpawner drops a fresh one back in after a short delay so the player
+    /// never runs out of fuel to feed the fire.
+    /// </summary>
+    static void BuildLogSpawner(GameObject systems, Transform logPile)
+    {
+        var spawnerGo = new GameObject("Log Spawner");
+        spawnerGo.transform.SetParent(systems.transform, false);
+        var spawner = spawnerGo.AddComponent<LogSpawner>();
+        Wire(spawner, "m_LogPrefab", s_LogPrefab);
+        Wire(spawner, "m_PileOrigin", logPile);
     }
 
     static GameObject BuildLogPrefab()
@@ -706,7 +801,7 @@ public static class GameSceneBuilder
         return prefab;
     }
 
-    static void BuildSkeletonSpawner(GameObject systems, GameObject rig)
+    static void BuildSkeletonSpawner(GameObject systems, GameObject rig, CampfireFuel campfire)
     {
         var prefab = BuildSkeletonPrefab();
 
@@ -714,6 +809,7 @@ public static class GameSceneBuilder
         spawnerGo.transform.SetParent(systems.transform, false);
         var spawner = spawnerGo.AddComponent<SkeletonSpawner>();
         Wire(spawner, "m_SkeletonPrefab", prefab);
+        Wire(spawner, "m_Campfire", campfire);
 
         if (rig != null)
         {

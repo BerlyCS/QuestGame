@@ -15,9 +15,11 @@ public class CampfireFuel : MonoBehaviour
     float m_MaxFuel = 1f;
 
     [SerializeField]
-    [Tooltip("Fuel the fire starts with (0-1 of max).")]
+    [Tooltip("Fuel the fire starts with (0-1 of max). Kept low so the camp opens on " +
+        "little more than an ember: only the fire and the log pile are lit, and the " +
+        "player has to feed it to reveal the rest of the camp.")]
     [Range(0f, 1f)]
-    float m_StartingFuelNormalized = 0.6f;
+    float m_StartingFuelNormalized = 0.12f;
 
     [SerializeField]
     [Tooltip("How much fuel is consumed per second.")]

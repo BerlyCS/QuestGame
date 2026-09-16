@@ -23,8 +23,13 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] float m_FireAmbientIntensity = 0.7f;
 
     [Header("Moon")]
+    [Tooltip("Moon intensity while the fire is well fed.")]
     [SerializeField] float m_MoonIntensityLit = 0.1f;
-    [SerializeField] float m_MoonIntensityDark = 0.28f;
+    [Tooltip("Moon intensity while the fire is out or barely an ember. Kept low " +
+        "(rather than brighter than the lit value) so darkness outside the firelight " +
+        "reads as close to absolute, both at the start of the game and whenever the " +
+        "player lets the fire die.")]
+    [SerializeField] float m_MoonIntensityDark = 0.05f;
 
     [Header("Fog")]
     [SerializeField] bool m_UseFog = true;
