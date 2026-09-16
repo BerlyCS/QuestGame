@@ -3,6 +3,10 @@ using UnityEngine;
 /// <summary>
 /// Spawns skeletons in front of and behind the player, in waves that get
 /// slightly faster over time. Keeps a cap on how many are alive at once.
+/// Stays dormant until the player has fed the campfire past
+/// <see cref="m_ActivationFuelNormalized"/>, so the opening moments are quiet
+/// and the waves start as a consequence of building up the fire rather than
+/// on a fixed timer from scene load.
 /// </summary>
 [DisallowMultipleComponent]
 public class SkeletonSpawner : MonoBehaviour
@@ -12,6 +16,11 @@ public class SkeletonSpawner : MonoBehaviour
 
     [Header("Target")]
     [SerializeField] Transform m_Target;
+
+    [Header("Activation")]
+    [SerializeField] CampfireFuel m_Campfire;
+    [Tooltip("Fuel level (0-1) the player must build the fire up to before the first wave starts.")]
+    [SerializeField] float m_ActivationFuelNormalized = 0.4f;
 
     [Header("Spawning")]
     [SerializeField] float m_StartDelay = 8f;
@@ -25,10 +34,12 @@ public class SkeletonSpawner : MonoBehaviour
     [SerializeField] float m_MinInterval = 1.5f;
     [SerializeField] float m_IntervalRampPerSpawn = 0.08f;
 
+    bool m_Activated;
     float m_NextSpawnTime;
     int m_Spawned;
     int m_Alive;
 
+    public bool Activated => m_Activated;
     public int AliveCount => m_Alive;
     public int SpawnedCount => m_Spawned;
 
@@ -36,14 +47,23 @@ public class SkeletonSpawner : MonoBehaviour
     {
         if (m_Target == null && Camera.main != null)
             m_Target = Camera.main.transform;
-
-        m_NextSpawnTime = Time.time + m_StartDelay;
     }
 
     void Update()
     {
         if (m_Target == null || m_SkeletonPrefab == null)
             return;
+
+        if (!m_Activated)
+        {
+            if (m_Campfire == null || m_Campfire.FuelNormalized < m_ActivationFuelNormalized)
+                return;
+
+            m_Activated = true;
+            m_NextSpawnTime = Time.time + m_StartDelay;
+            return;
+        }
+
         if (m_Spawned >= m_TotalToSpawn || m_Alive >= m_MaxAlive)
             return;
         if (Time.time < m_NextSpawnTime)

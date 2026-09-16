@@ -245,3 +245,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Log
   m_FuelValue: 0.25
   m_ConsumeEffect: {fileID: 0}
+  m_OnConsumed:
+    m_PersistentCalls:
+      m_Calls: []
