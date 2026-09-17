@@ -172,13 +172,12 @@ public static class GameSceneBuilder
             if (headOffset != null)
                 headOffset.vector3Value = new Vector3(0f, 0.15f, 0f);
 
-            // Without this, hand poses aren't populated from controller input at all,
-            // so the hand meshes the Interaction SDK's comprehensive rig ships with
-            // never render while holding Touch controllers: the player sees the
-            // world but no hands, even though they're grabbing things correctly.
+            // Hands-only game (see OculusProjectConfig's handTrackingSupport): no Touch
+            // controllers are tracked, so hand poses should always come from real hand
+            // tracking rather than being synthesized from controller input.
             var handPoses = serialized.FindProperty("controllerDrivenHandPosesType");
             if (handPoses != null)
-                handPoses.enumValueIndex = (int)OVRManager.ControllerDrivenHandPosesType.ConformingToController;
+                handPoses.enumValueIndex = (int)OVRManager.ControllerDrivenHandPosesType.None;
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
@@ -660,13 +659,18 @@ public static class GameSceneBuilder
         rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         var grabbable = log.AddComponent<Grabbable>();
-        var grab = log.AddComponent<GrabInteractable>();
-        grab.InjectRigidbody(rigidbody);
-        grab.InjectOptionalPointableElement(grabbable);
 
+        // Hands-only game: near grab (HandGrabInteractable, pinch while the log is in
+        // reach) and distance grab (DistanceHandGrabInteractable, pinch-and-fly from
+        // across the camp) both target the same Grabbable/Rigidbody. No controller-only
+        // GrabInteractable, since Touch controllers aren't used.
         var handGrab = log.AddComponent<HandGrabInteractable>();
         handGrab.InjectRigidbody(rigidbody);
         handGrab.InjectOptionalPointableElement(grabbable);
+
+        var distanceHandGrab = log.AddComponent<DistanceHandGrabInteractable>();
+        distanceHandGrab.InjectRigidbody(rigidbody);
+        distanceHandGrab.InjectOptionalPointableElement(grabbable);
 
         log.AddComponent<Log>();
         log.GetComponent<Renderer>().sharedMaterial = s_Wood;
@@ -928,13 +932,14 @@ public static class GameSceneBuilder
         collider.radius = 0.045f;
 
         var grabbable = root.AddComponent<Grabbable>();
-        var grab = root.AddComponent<GrabInteractable>();
-        grab.InjectRigidbody(rigidbody);
-        grab.InjectOptionalPointableElement(grabbable);
 
         var handGrab = root.AddComponent<HandGrabInteractable>();
         handGrab.InjectRigidbody(rigidbody);
         handGrab.InjectOptionalPointableElement(grabbable);
+
+        var distanceHandGrab = root.AddComponent<DistanceHandGrabInteractable>();
+        distanceHandGrab.InjectRigidbody(rigidbody);
+        distanceHandGrab.InjectOptionalPointableElement(grabbable);
 
         root.AddComponent<EnemyBanisher>();
     }
@@ -963,13 +968,14 @@ public static class GameSceneBuilder
         rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         var grabbable = shield.AddComponent<Grabbable>();
-        var grab = shield.AddComponent<GrabInteractable>();
-        grab.InjectRigidbody(rigidbody);
-        grab.InjectOptionalPointableElement(grabbable);
 
         var handGrab = shield.AddComponent<HandGrabInteractable>();
         handGrab.InjectRigidbody(rigidbody);
         handGrab.InjectOptionalPointableElement(grabbable);
+
+        var distanceHandGrab = shield.AddComponent<DistanceHandGrabInteractable>();
+        distanceHandGrab.InjectRigidbody(rigidbody);
+        distanceHandGrab.InjectOptionalPointableElement(grabbable);
 
         shield.AddComponent<Shield>();
     }
