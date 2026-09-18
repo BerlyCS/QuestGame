@@ -36,7 +36,7 @@ public class GeneradorBosque : MonoBehaviour
         }
 
         Collider col = ground.GetComponent<Collider>();
-        Bounds bounds = col != null ? col.bounds : new Bounds(ground.position, new Vector3(40, 1, 40));
+        Bounds bounds = col != null ? col.bounds : new Bounds(ground.position, new Vector3(25, 1, 25));
 
         GameObject grupoBosque = new GameObject("Bosque_Generado");
         grupoBosque.transform.SetParent(ground.parent);
