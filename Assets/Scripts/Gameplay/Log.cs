@@ -15,8 +15,8 @@ using UnityEngine.Events;
 public class Log : MonoBehaviour
 {
     [SerializeField]
-    [Tooltip("How much fuel this log adds when thrown into the fire.")]
-    float m_FuelValue = 0.25f;
+    [Tooltip("How much fuel this log adds when thrown into the fire, in seconds.")]
+    float m_FuelValue = 25f;
 
     [SerializeField]
     [Tooltip("Optional effect spawned when the log is consumed.")]

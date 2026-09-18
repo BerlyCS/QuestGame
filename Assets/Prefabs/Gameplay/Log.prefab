@@ -15,8 +15,8 @@ GameObject:
   - component: {fileID: 4479014070548619398}
   - component: {fileID: 216970886436304601}
   - component: {fileID: 449035906915213351}
-  - component: {fileID: 355561644315247958}
   - component: {fileID: 6596959672545578073}
+  - component: {fileID: 355561644315247958}
   m_Layer: 0
   m_Name: Log
   m_TagString: Untagged
@@ -209,23 +209,6 @@ MonoBehaviour:
   _movementProvider: {fileID: 0}
   _handAligment: 1
   _handGrabPoses: []
---- !u!114 &355561644315247958
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5569117884018972077}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1bbf2dc49f1b63741803705584a6ed88, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Log
-  m_FuelValue: 0.25
-  m_ConsumeEffect: {fileID: 0}
-  m_OnConsumed:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!114 &6596959672545578073
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -264,3 +247,20 @@ MonoBehaviour:
   _movementProvider: {fileID: 0}
   _handAligment: 1
   _handGrabPoses: []
+--- !u!114 &355561644315247958
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5569117884018972077}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bbf2dc49f1b63741803705584a6ed88, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Log
+  m_FuelValue: 25
+  m_ConsumeEffect: {fileID: 0}
+  m_OnConsumed:
+    m_PersistentCalls:
+      m_Calls: []

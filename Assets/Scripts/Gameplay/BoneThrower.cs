@@ -3,30 +3,30 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// The Caminante. Walks in a straight line to the campfire and never the
-/// player - it has no reference to the player at all, so it can brush past
-/// without reacting, which is the moment that teaches the whole game without
-/// a word (see enemigos.md). Kneels and attacks the fire once close, but
-/// backs off while the fire is strong: the light repels it. Simple
-/// primitive-based presentation with a procedural walk bob so it reads as
-/// "alive".
+/// The Lanzahuesos. Walks straight toward the campfire exactly like the
+/// Caminante, but stops well short - at m_StopDistance (8 m) - and never
+/// gets any closer: deliberately outside comfortable axe range (see
+/// enemigos.md). From there it lobs a bone at the fire on an interval; each
+/// impact drains fuel. Same rule as Skeleton: no reference to the player at
+/// all, only to the campfire. Glows brighter than a Caminante so it reads at
+/// range in the dark.
 /// </summary>
 [DisallowMultipleComponent]
-public class Skeleton : MonoBehaviour
+public class BoneThrower : MonoBehaviour
 {
     [Header("Stats")]
-    [SerializeField] int m_MaxHits = 2;
+    [SerializeField] int m_MaxHits = 1;
     [SerializeField] float m_MoveSpeed = 0.8f;
     [SerializeField] float m_TurnSpeed = 540f;
+    [SerializeField] float m_StopDistance = 8f;
 
     [Header("Attack")]
-    [SerializeField] float m_KneelDistance = 1.6f;
-    [SerializeField] float m_AttackInterval = 1.4f;
-    [SerializeField] float m_AttackFuelDrain = 3.5f;
-
-    [Header("Repelled by light")]
-    [SerializeField] float m_RepelFuelThreshold = 0.75f;
-    [SerializeField] float m_RepelDistance = 4.5f;
+    [SerializeField] float m_ThrowInterval = 4f;
+    [SerializeField] float m_ThrowFuelDamage = 4f;
+    [SerializeField] float m_ThrowArcHeight = 2.5f;
+    [SerializeField] float m_ThrowDuration = 1.4f;
+    [SerializeField] GameObject m_BonePrefab;
+    [SerializeField] Transform m_ThrowOrigin;
 
     [Header("References")]
     [SerializeField] CampfireFuel m_Campfire;
@@ -39,7 +39,6 @@ public class Skeleton : MonoBehaviour
     [SerializeField] float m_BobAmplitude = 0.06f;
     [SerializeField] float m_BobFrequency = 6f;
     [SerializeField] float m_ArmSwing = 35f;
-    [SerializeField] float m_KneelDropAmount = 0.3f;
     [SerializeField] Color m_HitFlashColor = new Color(1f, 0.25f, 0.2f);
 
     [Header("Events")]
@@ -47,7 +46,8 @@ public class Skeleton : MonoBehaviour
 
     int m_Hits;
     float m_BobPhase;
-    float m_NextAttackTime;
+    float m_NextThrowTime;
+    float m_ThrowWindupUntil;
     float m_HitFlashUntil;
     Vector3 m_BodyBasePosition;
     Color[] m_BaseColors;
@@ -55,7 +55,7 @@ public class Skeleton : MonoBehaviour
     public UnityEvent OnDied => m_OnDied;
     public bool IsAlive => m_Hits > 0;
 
-    /// <summary>Wired by SkeletonSpawner at spawn time; the only thing this enemy ever targets.</summary>
+    /// <summary>Wired by BoneThrowerSpawner at spawn time; the only thing this enemy ever targets.</summary>
     public void SetCampfire(CampfireFuel campfire) => m_Campfire = campfire;
 
     void Awake()
@@ -82,27 +82,21 @@ public class Skeleton : MonoBehaviour
         toCampfire.y = 0f;
         float distance = toCampfire.magnitude;
 
-        bool repelled = m_Campfire.Fuel01 > m_RepelFuelThreshold && distance < m_RepelDistance;
-
-        if (repelled)
-        {
-            MoveToward(-toCampfire);
-            AnimateWalk();
-        }
-        else if (distance > m_KneelDistance)
+        if (distance > m_StopDistance)
         {
             MoveToward(toCampfire);
             AnimateWalk();
         }
         else
         {
-            AnimateKneel();
-            if (Time.time >= m_NextAttackTime)
+            FaceToward(toCampfire);
+            AnimateThrowIdle();
+
+            if (Time.time >= m_NextThrowTime)
             {
-                m_NextAttackTime = Time.time + m_AttackInterval;
-                // The fire's own fuel-driven visuals (flame size, light, crackle pitch)
-                // already shrink and hiss as fuel drops - no separate effect needed here.
-                m_Campfire.AddFuel(-m_AttackFuelDrain);
+                m_NextThrowTime = Time.time + m_ThrowInterval;
+                m_ThrowWindupUntil = Time.time + 0.3f;
+                ThrowBone(campfirePosition);
             }
         }
 
@@ -115,9 +109,17 @@ public class Skeleton : MonoBehaviour
             return;
 
         direction.Normalize();
-        Quaternion look = Quaternion.LookRotation(direction, Vector3.up);
-        transform.rotation = Quaternion.RotateTowards(transform.rotation, look, m_TurnSpeed * Time.deltaTime);
+        FaceToward(direction);
         transform.position += direction * (m_MoveSpeed * Time.deltaTime);
+    }
+
+    void FaceToward(Vector3 direction)
+    {
+        if (direction.sqrMagnitude <= 0.0001f)
+            return;
+
+        Quaternion look = Quaternion.LookRotation(direction.normalized, Vector3.up);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, look, m_TurnSpeed * Time.deltaTime);
     }
 
     void AnimateWalk()
@@ -134,16 +136,29 @@ public class Skeleton : MonoBehaviour
             m_RightArm.localRotation = Quaternion.Euler(-swing, 0f, 0f);
     }
 
-    /// <summary>Kneeling, arms reaching into the fire - visually distinct from walking.</summary>
-    void AnimateKneel()
+    /// <summary>Standing still with the throwing arm raised in a brief windup before each lob.</summary>
+    void AnimateThrowIdle()
     {
         if (m_Body != null)
-            m_Body.localPosition = m_BodyBasePosition + new Vector3(0f, -m_KneelDropAmount, 0f);
+            m_Body.localPosition = m_BodyBasePosition;
 
-        if (m_LeftArm != null)
-            m_LeftArm.localRotation = Quaternion.Euler(-70f, 0f, 0f);
+        bool winding = Time.time < m_ThrowWindupUntil;
         if (m_RightArm != null)
-            m_RightArm.localRotation = Quaternion.Euler(-70f, 0f, 0f);
+            m_RightArm.localRotation = Quaternion.Euler(winding ? -140f : -20f, 0f, 0f);
+        if (m_LeftArm != null)
+            m_LeftArm.localRotation = Quaternion.Euler(-20f, 0f, 0f);
+    }
+
+    void ThrowBone(Vector3 targetPosition)
+    {
+        if (m_BonePrefab == null)
+            return;
+
+        Vector3 start = m_ThrowOrigin != null ? m_ThrowOrigin.position : transform.position + Vector3.up * 1.3f;
+        var boneGo = Instantiate(m_BonePrefab, start, Quaternion.identity);
+        var bone = boneGo.GetComponent<ThrownBone>();
+        if (bone != null)
+            bone.Launch(start, targetPosition, m_ThrowDuration, m_ThrowArcHeight, m_Campfire, m_ThrowFuelDamage);
     }
 
     public void TakeHit(int amount)
@@ -166,10 +181,9 @@ public class Skeleton : MonoBehaviour
     }
 
     /// <summary>
-    /// Called by GameManager on victory: freezes AI immediately (Update stops
-    /// running) and topples the skeleton into the ground over a second, then
-    /// removes it. Distinct from Die() - this isn't a combat kill, so it
-    /// doesn't fire OnDied (the spawner is already disabled by then anyway).
+    /// Called by GameManager on victory: freezes AI immediately and topples the
+    /// Lanzahuesos into the ground over a second, then removes it. Distinct
+    /// from Die() - not a combat kill, so no OnDied.
     /// </summary>
     public void Collapse()
     {
