@@ -4,17 +4,18 @@ using Oculus.Interaction.HandGrab;
 using UnityEngine;
 
 /// <summary>
-/// The player's throwable axe: grabbed from the rack with HandGrabInteractable
-/// as usual, thrown with the SDK's own physics, and always finds its way back.
+/// The player's throwable axe: lives on the weapon rack, grabbed with
+/// HandGrabInteractable as usual, thrown with the SDK's own physics, and
+/// always finds its way back to its spot on the rack (m_RackPoint) - not the
+/// player's hand.
 ///
 /// Held/released state is polled from Grabbable.SelectingPointsCount every
-/// frame rather than driven by Select/Unselect events (see armas.md): with
-/// hand tracking the release is irregular (a lost hand mid-grab can raise
-/// Cancel instead of Unselect, or nothing at all), so polling the SDK's own
-/// ground truth is the one signal that can't be missed. On top of that, a
-/// hard 3-second watchdog forces the return regardless of how it left the
-/// hand - weak throw, dead drop, missed event - so the player can never end
-/// up permanently unarmed.
+/// frame rather than driven by Select/Unselect events: with hand tracking
+/// the release is irregular (a lost hand mid-grab can raise Cancel instead
+/// of Unselect, or nothing at all), so polling the SDK's own ground truth is
+/// the one signal that can't be missed. On top of that, a hard 3-second
+/// watchdog forces the return regardless of how it left the hand - weak
+/// throw, dead drop, missed event - so the axe is never lost.
 /// </summary>
 [RequireComponent(typeof(Grabbable))]
 [RequireComponent(typeof(Rigidbody))]
@@ -22,12 +23,8 @@ using UnityEngine;
 public class Axe : MonoBehaviour
 {
     [SerializeField]
-    [Tooltip("Hand anchor to home toward when the axe was last held by the left hand.")]
-    Transform m_LeftHand;
-
-    [SerializeField]
-    [Tooltip("Hand anchor to home toward when the axe was last held by the right hand.")]
-    Transform m_RightHand;
+    [Tooltip("Fixed spot on the weapon rack the axe always returns to.")]
+    Transform m_RackPoint;
 
     [SerializeField]
     [Tooltip("Seconds after release before the axe starts flying back on a clean throw. Needs " +
@@ -51,14 +48,14 @@ public class Axe : MonoBehaviour
     float m_Acceleration = 18f;
 
     [SerializeField]
-    [Tooltip("Distance from the hand at which the axe is considered caught up and grabbable again.")]
-    float m_CatchDistance = 0.15f;
+    [Tooltip("Degrees/second the axe re-orients to its resting pose while homing. Safe to home " +
+        "rotation here (unlike homing to a hand) since the rack pose is fixed and known, not " +
+        "unpredictable live hand-tracking data.")]
+    float m_TurnSpeed = 360f;
 
     [SerializeField]
-    [Tooltip("Local-space offset from the root (which pivots at the head) to the point on the " +
-        "handle that should actually meet the hand. Without this the head/blade ends up at the " +
-        "hand instead of the handle, clipping through the player's hand.")]
-    Vector3 m_HandleGripOffset;
+    [Tooltip("Distance from the rack point at which the axe is considered caught up and grabbable again.")]
+    float m_CatchDistance = 0.1f;
 
     [Header("Catch feedback (no haptics - see armas.md)")]
     [SerializeField] Color m_CatchFlashColor = Color.white;
@@ -75,18 +72,13 @@ public class Axe : MonoBehaviour
     Color[] m_BaseColors;
     float m_FlashUntil;
 
-    Transform m_HoldingHand;
     bool m_WasHeld;
     bool m_HasEverBeenHeld;
     bool m_IsReturning;
     float m_UnheldTime;
     Coroutine m_ReturnRoutine;
 
-    /// <summary>
-    /// True while a hand is actually gripping the axe right now. Read by
-    /// Slingshot: the resortera can only appear while this is false (see
-    /// armas.md - "solo puede aparecer si el hacha no está en la mano").
-    /// </summary>
+    /// <summary>True while a hand is actually gripping the axe right now.</summary>
     public bool IsHeld => m_Grabbable.SelectingPointsCount > 0;
 
     void Awake()
@@ -113,9 +105,6 @@ public class Axe : MonoBehaviour
 
         if (held)
         {
-            if (m_Grabbable.GrabPoints.Count > 0)
-                m_HoldingHand = NearestHand(m_Grabbable.GrabPoints[0].position);
-
             if (!m_WasHeld && m_HasEverBeenHeld)
                 PlayCatchFeedback();
 
@@ -128,8 +117,8 @@ public class Axe : MonoBehaviour
         }
         else if (m_HasEverBeenHeld)
         {
-            // Guarded by m_HasEverBeenHeld so the axe doesn't summon itself off the
-            // rack before the player has ever picked it up.
+            // Guarded by m_HasEverBeenHeld so the axe doesn't fly off the rack
+            // before the player has ever picked it up.
             if (m_WasHeld)
             {
                 m_WasHeld = false;
@@ -147,25 +136,13 @@ public class Axe : MonoBehaviour
         UpdateCatchFlash();
     }
 
-    Transform NearestHand(Vector3 point)
-    {
-        if (m_LeftHand == null)
-            return m_RightHand;
-        if (m_RightHand == null)
-            return m_LeftHand;
-
-        return Vector3.Distance(point, m_LeftHand.position) <= Vector3.Distance(point, m_RightHand.position)
-            ? m_LeftHand
-            : m_RightHand;
-    }
-
     void BeginReturn()
     {
         if (m_ReturnRoutine != null)
             StopCoroutine(m_ReturnRoutine);
 
         m_IsReturning = true;
-        m_ReturnRoutine = StartCoroutine(ReturnToHand());
+        m_ReturnRoutine = StartCoroutine(ReturnToRack());
     }
 
     void StopReturning()
@@ -188,12 +165,11 @@ public class Axe : MonoBehaviour
             m_DistanceHandGrab.enabled = value;
     }
 
-    IEnumerator ReturnToHand()
+    IEnumerator ReturnToRack()
     {
         yield return new WaitForSeconds(m_ReturnDelay);
 
-        Transform hand = m_HoldingHand != null ? m_HoldingHand : (m_LeftHand != null ? m_LeftHand : m_RightHand);
-        if (hand == null || m_Grabbable.SelectingPointsCount > 0)
+        if (m_RackPoint == null || m_Grabbable.SelectingPointsCount > 0)
         {
             m_IsReturning = false;
             m_ReturnRoutine = null;
@@ -204,20 +180,14 @@ public class Axe : MonoBehaviour
         m_Rigidbody.isKinematic = true;
         m_Rigidbody.useGravity = false;
 
-        // Rotation is deliberately left untouched here: forcing it to match the raw
-        // hand-anchor basis (hand.rotation) made the axe arrive visibly flipped and
-        // in an orientation that didn't correspond to how it should sit in a fist -
-        // the axe just keeps whatever orientation it already had (from being
-        // thrown/tumbling) while homing in on position only. Since rotation never
-        // changes during this kinematic phase, m_HandleGripOffset can be re-applied
-        // to a moving hand every frame without drifting.
         float speed = m_StartSpeed;
         while (m_Grabbable.SelectingPointsCount == 0 &&
-               Vector3.Distance(m_Rigidbody.position, HandleTarget(hand)) > m_CatchDistance)
+               Vector3.Distance(m_Rigidbody.position, m_RackPoint.position) > m_CatchDistance)
         {
             speed = Mathf.Min(m_MaxSpeed, speed + m_Acceleration * Time.deltaTime);
-            var nextPosition = Vector3.MoveTowards(m_Rigidbody.position, HandleTarget(hand), speed * Time.deltaTime);
-            m_Rigidbody.Move(nextPosition, m_Rigidbody.rotation);
+            var nextPosition = Vector3.MoveTowards(m_Rigidbody.position, m_RackPoint.position, speed * Time.deltaTime);
+            var nextRotation = Quaternion.RotateTowards(m_Rigidbody.rotation, m_RackPoint.rotation, m_TurnSpeed * Time.deltaTime);
+            m_Rigidbody.Move(nextPosition, nextRotation);
             yield return null;
         }
 
@@ -226,19 +196,13 @@ public class Axe : MonoBehaviour
 
         while (m_Grabbable.SelectingPointsCount == 0)
         {
-            m_Rigidbody.Move(HandleTarget(hand), m_Rigidbody.rotation);
+            m_Rigidbody.Move(m_RackPoint.position, m_RackPoint.rotation);
             yield return null;
         }
 
         m_IsReturning = false;
         m_ReturnRoutine = null;
     }
-
-    /// <summary>
-    /// Where the root should sit so the handle (not the head, where the root
-    /// pivots) actually meets the hand.
-    /// </summary>
-    Vector3 HandleTarget(Transform hand) => hand.position - m_Rigidbody.rotation * m_HandleGripOffset;
 
     void PlayCatchFeedback()
     {

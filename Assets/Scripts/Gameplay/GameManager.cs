@@ -32,8 +32,16 @@ public class GameManager : MonoBehaviour
     [SerializeField] float m_DefeatFadeDuration = 1.5f;
     [SerializeField] float m_DefeatRestartDelay = 3f;
 
+    [Header("Ending twist (see DISEÑO.md 1.3)")]
+    [SerializeField] Renderer m_ChestRenderer;
+    [SerializeField] Material m_TeethMaterial;
+
     float m_Elapsed;
     bool m_GameOver;
+
+    /// <summary>Survival progress toward victory, 0-1. Read by DawnQuadController -
+    /// the only progress indicator in the game (see CLAUDE.md: cero UI).</summary>
+    public float SurvivalNormalized => m_SurvivalDuration <= 0f ? 0f : Mathf.Clamp01(m_Elapsed / m_SurvivalDuration);
 
     void OnEnable()
     {
@@ -87,6 +95,12 @@ public class GameManager : MonoBehaviour
 
         if (m_NightEnvironment != null)
             m_NightEnvironment.ForcedNormalized = 1f;
+
+        // The twist (DISEÑO.md 1.3): what read as gold coins was teeth all along -
+        // an instant swap, revealed by the same light that makes the bone log pile
+        // finally readable.
+        if (m_ChestRenderer != null && m_TeethMaterial != null)
+            m_ChestRenderer.sharedMaterial = m_TeethMaterial;
 
         StartCoroutine(RestartAfter(m_VictoryLitDuration));
     }
