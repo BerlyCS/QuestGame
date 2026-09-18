@@ -1,25 +1,26 @@
 using UnityEngine;
 
 /// <summary>
-/// Attached to the banishing cylinder. While it overlaps an enemy, that enemy
-/// is removed from the world. Uses an overlap query rather than physics trigger
-/// callbacks so it still works when the grabbed cylinder's rigidbody is
-/// kinematic (kinematic-vs-kinematic contacts do not raise trigger events).
+/// Attached to the axe. While it overlaps an enemy (Caminante or
+/// Lanzahuesos), that enemy takes a lethal hit - one axe impact always kills
+/// (see enemigos.md). Uses an overlap query rather than physics trigger
+/// callbacks so it still works when the grabbed axe's rigidbody is kinematic
+/// (kinematic-vs-kinematic contacts do not raise trigger events).
 /// </summary>
 [DisallowMultipleComponent]
 public class EnemyBanisher : MonoBehaviour
 {
     [SerializeField]
-    [Tooltip("Radius around the cylinder in which enemies are banished.")]
+    [Tooltip("Radius around the axe head in which enemies are hit.")]
     float m_Radius = 0.4f;
 
     [SerializeField]
     [Tooltip("Layers that can contain enemies.")]
     LayerMask m_EnemyLayers = ~0;
 
-    [Header("Feel")]
-    [SerializeField] float m_BanishHapticAmplitude = 0.55f;
-    [SerializeField] float m_BanishHapticDuration = 0.09f;
+    [SerializeField]
+    [Tooltip("Hit points dealt per overlap. Always lethal against either enemy's max hits.")]
+    int m_HitPoints = 2;
 
     readonly Collider[] m_Overlaps = new Collider[16];
 
@@ -31,13 +32,16 @@ public class EnemyBanisher : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             var skeleton = m_Overlaps[i].GetComponentInParent<Skeleton>();
-            if (skeleton == null || !skeleton.IsAlive)
+            if (skeleton != null)
+            {
+                if (skeleton.IsAlive)
+                    skeleton.TakeHit(m_HitPoints);
                 continue;
+            }
 
-            skeleton.Banish();
-
-            if (InteractorHaptics.TryGetHoldingController(gameObject, out var controller))
-                HapticsUtility.Pulse(controller, m_BanishHapticAmplitude, m_BanishHapticDuration);
+            var boneThrower = m_Overlaps[i].GetComponentInParent<BoneThrower>();
+            if (boneThrower != null && boneThrower.IsAlive)
+                boneThrower.TakeHit(m_HitPoints);
         }
     }
 

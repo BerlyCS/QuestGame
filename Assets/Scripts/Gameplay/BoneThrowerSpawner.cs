@@ -1,39 +1,34 @@
 using UnityEngine;
 
 /// <summary>
-/// Spawns skeletons on a fixed ring centred on the campfire (not the player's
-/// head), biased toward appearing in front of or behind wherever the player is
-/// looking, in waves that get slightly faster over time. Keeps a cap on how
-/// many are alive at once. Stays dormant until the player has fed the campfire past
-/// <see cref="m_ActivationFuelNormalized"/>, so the opening moments are quiet
-/// and the waves start as a consequence of building up the fire rather than
-/// on a fixed timer from scene load.
+/// Spawns Lanzahuesos on the same fixed ring as the Caminante (centred on the
+/// campfire, r = 10 m - see enemigos.md: "radios fijos, nada aleatorio"), but
+/// rarer and capped lower, since it exists to justify the resortera rather
+/// than to pressure the fire directly. Stays dormant until the player has fed
+/// the campfire past <see cref="m_ActivationFuelNormalized"/>, same as
+/// SkeletonSpawner.
 /// </summary>
 [DisallowMultipleComponent]
-public class SkeletonSpawner : MonoBehaviour
+public class BoneThrowerSpawner : MonoBehaviour
 {
     [Header("Prefab")]
-    [SerializeField] GameObject m_SkeletonPrefab;
+    [SerializeField] GameObject m_BoneThrowerPrefab;
 
     [Header("Target")]
     [SerializeField] Transform m_Target;
 
     [Header("Activation")]
     [SerializeField] CampfireFuel m_Campfire;
-    [Tooltip("Fuel level (0-1) the player must build the fire up to before the first wave starts.")]
-    [SerializeField] float m_ActivationFuelNormalized = 0.4f;
+    [Tooltip("Fuel level (0-1) the player must build the fire up to before the first Lanzahuesos appears.")]
+    [SerializeField] float m_ActivationFuelNormalized = 0.5f;
 
     [Header("Spawning")]
-    [SerializeField] float m_StartDelay = 8f;
-    [SerializeField] float m_SpawnInterval = 4.5f;
+    [SerializeField] float m_StartDelay = 20f;
+    [SerializeField] float m_SpawnInterval = 25f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
-    [SerializeField] int m_MaxAlive = 6;
-    [SerializeField] int m_TotalToSpawn = 30;
-
-    [Header("Difficulty")]
-    [SerializeField] float m_MinInterval = 1.5f;
-    [SerializeField] float m_IntervalRampPerSpawn = 0.08f;
+    [SerializeField] int m_MaxAlive = 2;
+    [SerializeField] int m_TotalToSpawn = 6;
 
     bool m_Activated;
     float m_NextSpawnTime;
@@ -52,7 +47,7 @@ public class SkeletonSpawner : MonoBehaviour
 
     void Update()
     {
-        if (m_Target == null || m_SkeletonPrefab == null)
+        if (m_Target == null || m_BoneThrowerPrefab == null)
             return;
 
         if (!m_Activated)
@@ -71,17 +66,13 @@ public class SkeletonSpawner : MonoBehaviour
             return;
 
         Spawn();
-
-        float interval = Mathf.Max(m_MinInterval, m_SpawnInterval - m_Spawned * m_IntervalRampPerSpawn);
-        m_NextSpawnTime = Time.time + interval;
+        m_NextSpawnTime = Time.time + m_SpawnInterval;
     }
 
     void Spawn()
     {
-        // The ring is centred on the campfire (the thing enemies actually walk to),
-        // not on the player's head: the player barely moves, but the ring must stay
-        // fixed regardless. Direction (front/back bias) still follows where the
-        // player is looking, so enemies still read as "coming from behind".
+        // Same fixed ring as the Caminante, centred on the campfire rather than
+        // the player's head.
         Vector3 origin = m_Campfire != null ? m_Campfire.transform.position : m_Target.position;
 
         Vector3 forward = Vector3.ProjectOnPlane(m_Target.forward, Vector3.up).normalized;
@@ -95,30 +86,30 @@ public class SkeletonSpawner : MonoBehaviour
         Vector3 position = origin + direction * m_SpawnDistance;
         position.y = 0f;
 
-        var skeleton = Instantiate(m_SkeletonPrefab, position, Quaternion.LookRotation(-direction, Vector3.up));
-        var component = skeleton.GetComponent<Skeleton>();
+        var boneThrower = Instantiate(m_BoneThrowerPrefab, position, Quaternion.LookRotation(-direction, Vector3.up));
+        var component = boneThrower.GetComponent<BoneThrower>();
         if (component != null)
         {
             component.SetCampfire(m_Campfire);
-            component.OnDied.AddListener(OnSkeletonDied);
+            component.OnDied.AddListener(OnBoneThrowerDied);
         }
 
         m_Spawned++;
         m_Alive++;
     }
 
-    void OnSkeletonDied()
+    void OnBoneThrowerDied()
     {
         m_Alive = Mathf.Max(0, m_Alive - 1);
     }
 
     /// <summary>
-    /// Force-spawns one Caminante immediately at the fixed ring, bypassing the
-    /// activation gate and wave cooldown. For debug use only (see DebugKeys).
+    /// Force-spawns one Lanzahuesos immediately at the fixed ring, bypassing
+    /// the activation gate and cooldown. For debug use only (see DebugKeys).
     /// </summary>
     public void DebugSpawnNow()
     {
-        if (m_Target == null || m_SkeletonPrefab == null)
+        if (m_Target == null || m_BoneThrowerPrefab == null)
             return;
 
         Spawn();

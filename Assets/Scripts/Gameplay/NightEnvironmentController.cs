@@ -36,6 +36,20 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] Color m_FogColor = new Color(0.01f, 0.01f, 0.02f);
     [SerializeField] float m_FogDensity = 0.012f;
 
+    float? m_ForcedNormalized;
+
+    /// <summary>
+    /// When set, overrides the fuel-driven light level (0-1) every frame instead of
+    /// reading the campfire. Used by GameManager to drive the victory brighten-up and
+    /// the defeat fade-to-black independently of whatever the fire happens to be
+    /// doing. Set back to null to resume normal fuel-driven behaviour.
+    /// </summary>
+    public float? ForcedNormalized
+    {
+        get => m_ForcedNormalized;
+        set => m_ForcedNormalized = value;
+    }
+
     void Awake()
     {
         Apply(1f);
@@ -43,7 +57,7 @@ public class NightEnvironmentController : MonoBehaviour
 
     void Update()
     {
-        float n = m_Campfire != null ? m_Campfire.FuelNormalized : 0f;
+        float n = m_ForcedNormalized ?? (m_Campfire != null ? m_Campfire.FuelNormalized : 0f);
         Apply(n);
     }
 
