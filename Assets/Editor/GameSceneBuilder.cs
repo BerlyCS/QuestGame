@@ -21,11 +21,13 @@ public static class GameSceneBuilder
     const string k_RigPrefabPath = "Packages/com.meta.xr.sdk.interaction.ovr/Runtime/Prefabs/OVRComprehensiveInteractionRig.prefab";
     const string k_CameraRigPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRCameraRig.prefab";
 
-    // Camp layout, relative to the static player rig (see fogata.md). Everything the
-    // player needs sits within arm's reach; nothing here requires taking a step.
-    const float k_CampfireDistance = 1.1f;
-    const float k_LogPileDistance = 1.3f;
-    const float k_WeaponRackDistance = 1.1f;
+    // Camp layout, relative to the static player rig: a "U" open toward the player,
+    // all inside the forward field of view so nothing needs a head turn. The fire sits
+    // ahead at the bottom of the U; the log pile (right) and the weapon rack (left)
+    // are its arms, a little in front of the player. Offsets are (right, forward).
+    const float k_CampfireForward = 2.0f;
+    static readonly Vector2 k_LogPileOffset = new Vector2(0.75f, 0.95f);
+    static readonly Vector2 k_WeaponRackOffset = new Vector2(-0.6f, 0.95f);
 
     // Fixed rings centred on the campfire. Deliberately not randomised: these are
     // gameplay distances (enemy spawn ring, ranged-enemy stand-off, tree-line
@@ -57,13 +59,19 @@ public static class GameSceneBuilder
     static Material s_Moon;
     static Material s_Treasure;
     static Material s_Teeth;
-    static Material s_Dawn;
+    static Material s_HunterBone;
+    static Material s_HunterEye;
+    static Material s_Vignette;
+    static Material s_GrabGlow;
+    static Material s_Sky;
+    static Material s_GripWrap;
     static PhysicsMaterial s_LowFriction;
 
     [MenuItem("Tools/Game/Build Game Scene")]
     public static void Build()
     {
         EnsureFolders();
+        EnableFireLightShadows();
 
         EditorSceneManager.SaveOpenScenes();
 
@@ -72,6 +80,7 @@ public static class GameSceneBuilder
         ConfigureLighting();
 
         var moonLight = CreateMoonLight();
+        RenderSettings.sun = moonLight; // the procedural sky takes its colours from this light
 
         var rig = CreateXrRig(out var interactionRig);
         ConfigureCamera(rig);
@@ -96,9 +105,11 @@ public static class GameSceneBuilder
             rigRight = Vector3.right;
         rigRight.Normalize();
 
-        Vector3 campfirePosition = rigGroundPosition + rigForward * k_CampfireDistance;
-        Vector3 logPileGroundPosition = rigGroundPosition + rigRight * k_LogPileDistance;
-        Vector3 weaponRackPosition = rigGroundPosition - rigRight * k_WeaponRackDistance;
+        Vector3 campfirePosition = rigGroundPosition + rigForward * k_CampfireForward;
+        Vector3 logPileGroundPosition = rigGroundPosition
+            + rigRight * k_LogPileOffset.x + rigForward * k_LogPileOffset.y;
+        Vector3 weaponRackPosition = rigGroundPosition
+            + rigRight * k_WeaponRackOffset.x + rigForward * k_WeaponRackOffset.y;
 
         var environment = new GameObject("Environment").transform;
         BuildGround(environment);
@@ -110,32 +121,34 @@ public static class GameSceneBuilder
         BuildTutorialLog(campfire.transform);
         var tent = BuildTent(environment);
         var (campProps, chestRenderer) = BuildCampProps(environment);
-        var dawnQuad = BuildDawnQuad(environment);
 
-        // The weapon rack holds only the axe and the resortera's ammo (see armas.md):
-        // grabbing an ember ball off it is the whole invocation, no separate gesture.
+        // The weapon rack holds only the slingshot and its ammo (see armas.md): one hand
+        // takes the frame, the other takes an ember off the bowl and draws it back.
         var emberPrefab = BuildEmberProjectilePrefab();
-        var (weaponRack, axe, ammoPileOrigin) = BuildWeaponRack(environment, weaponRackPosition, emberPrefab);
-
-        var leftHand = rig != null ? FindByName(rig.transform, "LeftHandAnchor") : null;
-        var rightHand = rig != null ? FindByName(rig.transform, "RightHandAnchor") : null;
+        var (weaponRack, slingshot, ammoPileOrigin) = BuildWeaponRack(environment, weaponRackPosition, emberPrefab);
 
         var systems = new GameObject("Game Systems");
         var night = systems.AddComponent<NightEnvironmentController>();
         Wire(night, "m_Campfire", campfire);
         Wire(night, "m_MoonLight", moonLight);
+        Wire(night, "m_SkyMaterial", s_Sky);
 
         BuildCampReveal(systems, campfire, tent, campProps, weaponRack);
 
         var skeletonSpawner = BuildSkeletonSpawner(systems, rig, campfire);
         var boneThrowerSpawner = BuildBoneThrowerSpawner(systems, rig, campfire);
+        var playerHealth = BuildPlayerHealth(systems, rig);
+        var hunterSpawner = BuildHunterSpawner(systems, playerHealth);
         BuildLogSpawner(systems, logPile);
-        BuildEmberAmmoSpawner(systems, ammoPileOrigin, emberPrefab, leftHand, rightHand);
+        BuildEmberAmmoSpawner(systems, ammoPileOrigin, emberPrefab, slingshot);
 
         var gameManager = BuildGameManager(systems, campfire, night, skeletonSpawner, boneThrowerSpawner,
             chestRenderer, s_Teeth);
-        Wire(dawnQuad, "m_GameManager", gameManager);
-        BuildDebugKeys(systems, skeletonSpawner, boneThrowerSpawner, gameManager);
+        Wire(gameManager, "m_HunterSpawner", hunterSpawner);
+        Wire(gameManager, "m_PlayerHealth", playerHealth);
+        Wire(hunterSpawner, "m_GameManager", gameManager);
+        Wire(night, "m_GameManager", gameManager);
+        BuildDebugKeys(systems, skeletonSpawner, boneThrowerSpawner, gameManager, hunterSpawner);
 
         AssetDatabase.SaveAssets();
 
@@ -157,14 +170,14 @@ public static class GameSceneBuilder
 
     static void ConfigureLighting()
     {
-        RenderSettings.skybox = null;
+        RenderSettings.skybox = null; // replaced by the procedural night sky in CreateMaterials
         RenderSettings.ambientMode = AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.02f, 0.03f, 0.05f);
         RenderSettings.ambientIntensity = 0.12f;
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Exponential;
-        RenderSettings.fogColor = new Color(0.01f, 0.01f, 0.02f);
-        RenderSettings.fogDensity = 0.012f;
+        RenderSettings.fogColor = new Color(0.05f, 0.06f, 0.09f);
+        RenderSettings.fogDensity = 0.035f;
     }
 
     static Light CreateMoonLight()
@@ -267,7 +280,7 @@ public static class GameSceneBuilder
         if (camera == null)
             return;
 
-        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.clearFlags = CameraClearFlags.Skybox;
         camera.backgroundColor = new Color(0.005f, 0.006f, 0.012f, 1f);
     }
 
@@ -309,6 +322,38 @@ public static class GameSceneBuilder
         child.gameObject.SetActive(false);
     }
 
+    /// <summary>
+    /// The fire is a point light, i.e. an "additional light" in URP, and the
+    /// pipeline asset had additional-light shadows switched off - so the shadow
+    /// radar never rendered at all. Turns them (and soft filtering) on for
+    /// every URP asset in use.
+    /// </summary>
+    static void EnableFireLightShadows()
+    {
+        var assets = new System.Collections.Generic.HashSet<Object> { GraphicsSettings.defaultRenderPipeline };
+        for (int i = 0; i < QualitySettings.names.Length; i++)
+            assets.Add(QualitySettings.GetRenderPipelineAssetAt(i));
+
+        foreach (var asset in assets)
+        {
+            // Package assets are immutable; only the project's own URP asset is edited.
+            if (asset == null || AssetDatabase.GetAssetPath(asset).StartsWith("Packages/"))
+                continue;
+
+            var serialized = new SerializedObject(asset);
+            var additional = serialized.FindProperty("m_AdditionalLightShadowsSupported");
+            var soft = serialized.FindProperty("m_SoftShadowsSupported");
+            if (additional != null)
+                additional.boolValue = true;
+            if (soft != null)
+                soft.boolValue = true;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(asset);
+        }
+
+        AssetDatabase.SaveAssets();
+    }
+
     static void CreateMaterials()
     {
         s_Ground = CreateMaterial("M_Ground", new Color(0.15f, 0.13f, 0.1f), 0f, 0.05f);
@@ -330,11 +375,78 @@ public static class GameSceneBuilder
         s_Moon = CreateMaterial("M_Moon", new Color(0.9f, 0.92f, 1f), 0f, 0.2f, new Color(1.5f, 1.6f, 2f));
         s_Treasure = CreateMaterial("M_Treasure", new Color(0.85f, 0.7f, 0.2f), 0.9f, 0.8f, new Color(0.45f, 0.35f, 0.08f));
         s_Teeth = CreateMaterial("M_Teeth", new Color(0.88f, 0.86f, 0.78f), 0f, 0.3f);
-        // Barely visible until the survival curve nears 1 (see DawnQuadController) -
-        // Cull Off so the quad reads from any angle without having to aim its facing.
-        s_Dawn = CreateMaterial("M_Dawn", new Color(0.03f, 0.03f, 0.04f), 0f, 0.1f, new Color(1.6f, 1f, 0.55f));
-        s_Dawn.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
+        // The Cazador (hunts the player): dark red bone with burning red eyes, so it is
+        // told apart at a glance from the pale Caminante.
+        s_HunterBone = CreateMaterial("M_HunterBone", new Color(0.42f, 0.1f, 0.08f), 0f, 0.25f, new Color(0.45f, 0.04f, 0.02f));
+        s_HunterEye = CreateMaterial("M_HunterEye", new Color(1f, 0.1f, 0.05f), 0f, 0.3f, new Color(3f, 0.25f, 0.1f));
+        s_Vignette = CreateVignetteMaterial();
+        s_GripWrap = CreateMaterial("M_GripWrap", new Color(0.5f, 0.28f, 0.1f), 0f, 0.2f, new Color(0.3f, 0.14f, 0.02f));
+        s_GrabGlow = CreateGrabGlowMaterial();
+        s_Sky = CreateSkyMaterial();
         s_LowFriction = CreatePhysicsMaterial("PM_LowFriction", 0.05f, 0f);
+    }
+
+    /// <summary>
+    /// Procedural sky with no sun disk: its colours come from the scene's sun light
+    /// (the "Moon Light", see NightEnvironmentController), which sinks below the
+    /// horizon at night and rises toward dawn, so the whole 360 degrees of sky
+    /// gradually gets lighter. Made as an asset so the shader ships in builds.
+    /// </summary>
+    static Material CreateSkyMaterial()
+    {
+        var material = new Material(Shader.Find("Skybox/Procedural")) { name = "M_NightSky" };
+        material.SetFloat("_SunDisk", 0f);
+        material.SetFloat("_AtmosphereThickness", 1f);
+        material.SetColor("_SkyTint", new Color(0.72f, 0.42f, 0.55f));
+        material.SetColor("_GroundColor", new Color(0.01f, 0.01f, 0.02f));
+        material.SetFloat("_Exposure", 0.12f);
+
+        AssetDatabase.CreateAsset(material, $"{k_MaterialFolder}/M_NightSky.mat");
+        RenderSettings.skybox = material;
+        return material;
+    }
+
+    /// <summary>
+    /// Alpha-blended transparent unlit material for the damage vignette (see
+    /// PlayerHealth, which supplies the radial texture and the alpha at runtime).
+    /// </summary>
+    static Material CreateVignetteMaterial()
+    {
+        var material = new Material(Shader.Find("Universal Render Pipeline/Unlit")) { name = "M_DamageVignette" };
+        material.SetFloat("_Surface", 1f);
+        material.SetFloat("_Blend", 0f);
+        material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        material.SetFloat("_ZWrite", 0f);
+        material.SetOverrideTag("RenderType", "Transparent");
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Overlay - 100;
+        material.SetColor("_BaseColor", new Color(0.9f, 0.04f, 0.04f, 0f));
+
+        AssetDatabase.CreateAsset(material, $"{k_MaterialFolder}/M_DamageVignette.mat");
+        return material;
+    }
+
+    /// <summary>
+    /// Additive transparent unlit material for the grab-affordance halo (see
+    /// GrabHighlight). Made as an asset, not at runtime, so the transparent
+    /// shader variant is guaranteed to be included in Quest builds.
+    /// </summary>
+    static Material CreateGrabGlowMaterial()
+    {
+        var material = new Material(Shader.Find("Universal Render Pipeline/Unlit")) { name = "M_GrabGlow" };
+        material.SetFloat("_Surface", 1f);
+        material.SetFloat("_Blend", 2f);
+        material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+        material.SetFloat("_ZWrite", 0f);
+        material.SetOverrideTag("RenderType", "Transparent");
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        material.SetColor("_BaseColor", new Color(1f, 0.7f, 0.2f, 1f));
+
+        AssetDatabase.CreateAsset(material, $"{k_MaterialFolder}/M_GrabGlow.mat");
+        return material;
     }
 
     static void BuildGround(Transform parent)
@@ -723,6 +835,9 @@ public static class GameSceneBuilder
         distanceHandGrab.InjectOptionalPointableElement(grabbable);
 
         log.AddComponent<Log>();
+        var logHighlight = log.GetComponent<GrabHighlight>();
+        Wire(logHighlight, "m_GlowMaterial", s_GrabGlow);
+        SetEnum(logHighlight, "m_GrabSound", (int)GrabHighlight.GrabSound.Wood);
         log.GetComponent<Renderer>().sharedMaterial = s_Bone;
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(log, $"{k_PrefabFolder}/Log.prefab");
@@ -767,7 +882,7 @@ public static class GameSceneBuilder
         props.SetParent(parent, false);
 
         var bench = CreatePrimitive("Log Bench", PrimitiveType.Cylinder, props,
-            new Vector3(1.15f, 0.22f, 0.9f), new Vector3(0.22f, 0.6f, 0.22f), s_Wood);
+            new Vector3(2f, 0.22f, 0.3f), new Vector3(0.22f, 0.6f, 0.22f), s_Wood);
         bench.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
 
         CreatePrimitive("Barrel", PrimitiveType.Cylinder, props,
@@ -802,45 +917,55 @@ public static class GameSceneBuilder
         return (props.gameObject, chest.GetComponent<Renderer>());
     }
 
-    static GameObject BuildSkeletonPrefab()
+    static GameObject BuildSkeletonPrefab(bool hunter = false)
     {
-        var root = new GameObject("Skeleton");
+        var root = new GameObject(hunter ? "Hunter" : "Skeleton");
         var skeleton = root.AddComponent<Skeleton>();
+        var boneMaterial = hunter ? s_HunterBone : s_Bone;
 
         var body = new GameObject("Body");
         body.transform.SetParent(root.transform, false);
 
         CreatePrimitive("Skull", PrimitiveType.Sphere, body.transform,
-            new Vector3(0f, 1.62f, 0f), new Vector3(0.24f, 0.24f, 0.24f), s_Bone);
+            new Vector3(0f, 1.62f, 0f), new Vector3(0.24f, 0.24f, 0.24f), boneMaterial);
         CreatePrimitive("Jaw", PrimitiveType.Cube, body.transform,
-            new Vector3(0f, 1.52f, 0.04f), new Vector3(0.16f, 0.06f, 0.14f), s_Bone);
+            new Vector3(0f, 1.52f, 0.04f), new Vector3(0.16f, 0.06f, 0.14f), boneMaterial);
         CreatePrimitive("Spine", PrimitiveType.Cylinder, body.transform,
-            new Vector3(0f, 1.2f, 0f), new Vector3(0.08f, 0.22f, 0.08f), s_Bone);
+            new Vector3(0f, 1.2f, 0f), new Vector3(0.08f, 0.22f, 0.08f), boneMaterial);
 
         for (int i = 0; i < 3; i++)
             CreatePrimitive($"Rib_{i}", PrimitiveType.Cube, body.transform,
                 new Vector3(0f, 1.32f - i * 0.11f, 0f),
-                new Vector3(0.34f - i * 0.03f, 0.035f, 0.2f), s_Bone);
+                new Vector3(0.34f - i * 0.03f, 0.035f, 0.2f), boneMaterial);
 
         CreatePrimitive("Pelvis", PrimitiveType.Cube, body.transform,
-            new Vector3(0f, 0.92f, 0f), new Vector3(0.3f, 0.14f, 0.18f), s_Bone);
+            new Vector3(0f, 0.92f, 0f), new Vector3(0.3f, 0.14f, 0.18f), boneMaterial);
 
         var leftArm = new GameObject("Left Arm");
         leftArm.transform.SetParent(body.transform, false);
         leftArm.transform.localPosition = new Vector3(0.24f, 1.35f, 0f);
         CreatePrimitive("Upper", PrimitiveType.Capsule, leftArm.transform,
-            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), s_Bone);
+            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), boneMaterial);
 
         var rightArm = new GameObject("Right Arm");
         rightArm.transform.SetParent(body.transform, false);
         rightArm.transform.localPosition = new Vector3(-0.24f, 1.35f, 0f);
         CreatePrimitive("Upper", PrimitiveType.Capsule, rightArm.transform,
-            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), s_Bone);
+            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), boneMaterial);
 
         CreatePrimitive("Left Leg", PrimitiveType.Capsule, body.transform,
-            new Vector3(0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), s_Bone);
+            new Vector3(0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), boneMaterial);
         CreatePrimitive("Right Leg", PrimitiveType.Capsule, body.transform,
-            new Vector3(-0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), s_Bone);
+            new Vector3(-0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), boneMaterial);
+
+        if (hunter)
+        {
+            // Burning red eyes on the skull's front face (same size as the Caminante).
+            CreatePrimitive("Left Eye", PrimitiveType.Sphere, body.transform,
+                new Vector3(0.045f, 1.645f, 0.1f), new Vector3(0.05f, 0.05f, 0.05f), s_HunterEye);
+            CreatePrimitive("Right Eye", PrimitiveType.Sphere, body.transform,
+                new Vector3(-0.045f, 1.645f, 0.1f), new Vector3(0.05f, 0.05f, 0.05f), s_HunterEye);
+        }
 
         var capsule = root.AddComponent<CapsuleCollider>();
         capsule.center = new Vector3(0f, 0.9f, 0f);
@@ -868,7 +993,7 @@ public static class GameSceneBuilder
             rendererArray.GetArrayElementAtIndex(i).objectReferenceValue = renderers[i];
         serialized.ApplyModifiedPropertiesWithoutUndo();
 
-        var prefab = PrefabUtility.SaveAsPrefabAsset(root, $"{k_PrefabFolder}/Skeleton.prefab");
+        var prefab = PrefabUtility.SaveAsPrefabAsset(root, $"{k_PrefabFolder}/{(hunter ? "Hunter" : "Skeleton")}.prefab");
         Object.DestroyImmediate(root);
         return prefab;
     }
@@ -1060,12 +1185,43 @@ public static class GameSceneBuilder
     /// never remove.
     /// </summary>
     static void BuildDebugKeys(GameObject systems, SkeletonSpawner skeletonSpawner,
-        BoneThrowerSpawner boneThrowerSpawner, GameManager gameManager)
+        BoneThrowerSpawner boneThrowerSpawner, GameManager gameManager, HunterSpawner hunterSpawner)
     {
         var debugKeys = systems.AddComponent<DebugKeys>();
         Wire(debugKeys, "m_SkeletonSpawner", skeletonSpawner);
         Wire(debugKeys, "m_BoneThrowerSpawner", boneThrowerSpawner);
         Wire(debugKeys, "m_GameManager", gameManager);
+        Wire(debugKeys, "m_HunterSpawner", hunterSpawner);
+    }
+
+    /// <summary>
+    /// The player's life (see PlayerHealth): read off the screen as a red vignette,
+    /// never a bar. Only the Cazadores take it.
+    /// </summary>
+    static PlayerHealth BuildPlayerHealth(GameObject systems, GameObject rig)
+    {
+        var go = new GameObject("Player Health");
+        go.transform.SetParent(systems.transform, false);
+        var health = go.AddComponent<PlayerHealth>();
+        Wire(health, "m_VignetteMaterial", s_Vignette);
+
+        // The centre eye, not the first Camera found (that is the left eye): the damage
+        // vignette and the end message are parented to it and must sit between both eyes.
+        var head = rig != null ? FindByName(rig.transform, "CenterEyeAnchor") : null;
+        if (head != null)
+            Wire(health, "m_Head", head);
+
+        return health;
+    }
+
+    static HunterSpawner BuildHunterSpawner(GameObject systems, PlayerHealth player)
+    {
+        var go = new GameObject("Hunter Spawner");
+        go.transform.SetParent(systems.transform, false);
+        var spawner = go.AddComponent<HunterSpawner>();
+        Wire(spawner, "m_HunterPrefab", BuildSkeletonPrefab(hunter: true));
+        Wire(spawner, "m_Player", player);
+        return spawner;
     }
 
     /// <summary>
@@ -1089,27 +1245,13 @@ public static class GameSceneBuilder
     }
 
     /// <summary>
-    /// The game's only progress indicator (see CLAUDE.md - cero UI): a quad on
-    /// the eastern horizon that brightens as pow(SurvivalNormalized, 2.2), read
-    /// by DawnQuadController every frame. Cull Off so its facing never matters.
-    /// </summary>
-    static DawnQuadController BuildDawnQuad(Transform parent)
-    {
-        var quad = CreatePrimitive("Dawn Quad", PrimitiveType.Quad, parent,
-            new Vector3(0f, 6f, 30f), new Vector3(40f, 20f, 1f), s_Dawn);
-        RemoveCollider(quad);
-
-        var controller = quad.AddComponent<DawnQuadController>();
-        return controller;
-    }
-
-    /// <summary>
-    /// Holds only the axe and the resortera's ammo (see armas.md) - nothing
-    /// else. Both the axe's rest/return point and the ammo pile live here.
+    /// Holds only the slingshot and its ammo (see armas.md). The frame rests
+    /// on a peg at chest height; the embers sit in a bowl on a pedestal at
+    /// hip height beside it, so both hands reach everything without a step.
     /// Hidden (along with its contents) by CampRevealController until the
     /// player feeds the fire for the first time.
     /// </summary>
-    static (GameObject rack, Axe axe, Transform ammoPileOrigin) BuildWeaponRack(
+    static (GameObject rack, Slingshot slingshot, Transform ammoPileOrigin) BuildWeaponRack(
         Transform parent, Vector3 position, GameObject emberPrefab)
     {
         var rack = new GameObject("Weapon Rack");
@@ -1120,33 +1262,39 @@ public static class GameSceneBuilder
             new Vector3(0f, 0.05f, 0f), new Vector3(0.3f, 0.05f, 0.3f), s_Stone);
         CreatePrimitive("Rack Post", PrimitiveType.Cylinder, rack.transform,
             new Vector3(0f, 0.6f, 0f), new Vector3(0.05f, 0.6f, 0.05f), s_Trunk);
+        var peg = CreatePrimitive("Rack Peg", PrimitiveType.Cylinder, rack.transform,
+            new Vector3(-0.07f, 1.05f, 0f), new Vector3(0.02f, 0.06f, 0.02f), s_Trunk);
+        peg.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
 
-        // Bare transform, no mesh: this is the axe's fixed rest/return spot, leaning
-        // against the post. The axe itself is the only thing visible here.
+        // Bare transform, no mesh: the frame's fixed rest/return spot, hanging off the peg.
         var rackPointGo = new GameObject("Rack Point");
         rackPointGo.transform.SetParent(rack.transform, false);
-        rackPointGo.transform.localPosition = new Vector3(0.1f, 0.75f, 0.05f);
-        rackPointGo.transform.localRotation = Quaternion.Euler(0f, 0f, 15f);
+        rackPointGo.transform.localPosition = new Vector3(-0.18f, 1.05f, 0f);
 
-        var axe = BuildAxe(rack.transform, rackPointGo.transform);
+        var slingshot = BuildSlingshot(rack.transform, rackPointGo.transform);
+
+        // Ember bowl: pedestal + shallow dish at hip height.
+        CreatePrimitive("Ammo Pedestal", PrimitiveType.Cylinder, rack.transform,
+            new Vector3(0.3f, 0.42f, 0.05f), new Vector3(0.06f, 0.42f, 0.06f), s_Stone);
+        CreatePrimitive("Ammo Bowl", PrimitiveType.Cylinder, rack.transform,
+            new Vector3(0.3f, 0.86f, 0.05f), new Vector3(0.24f, 0.02f, 0.24f), s_Stone);
 
         var ammoPile = new GameObject("Ember Ammo");
         ammoPile.transform.SetParent(rack.transform, false);
-        ammoPile.transform.localPosition = new Vector3(-0.2f, 0.12f, 0.1f);
+        ammoPile.transform.localPosition = new Vector3(0.3f, 0.92f, 0.05f);
         BuildEmberAmmoPile(ammoPile.transform, emberPrefab);
 
-        return (rack, axe, ammoPile.transform);
+        return (rack, slingshot, ammoPile.transform);
     }
 
     /// <summary>
-    /// A small resting cluster of ember balls - the resortera's ammo, kept
-    /// stocked by EmberAmmoSpawner. Grabbing one is the whole invocation, no
-    /// separate summon gesture (see SlingEmberHandle).
+    /// A small resting cluster of ember balls - the slingshot's ammo, kept
+    /// stocked by EmberAmmoSpawner.
     /// </summary>
     static void BuildEmberAmmoPile(Transform pileOrigin, GameObject emberPrefab)
     {
-        const int k_InitialCount = 3;
-        const float k_ClusterRadius = 0.05f;
+        const int k_InitialCount = 5;
+        const float k_ClusterRadius = 0.07f;
 
         for (int i = 0; i < k_InitialCount; i++)
         {
@@ -1159,61 +1307,53 @@ public static class GameSceneBuilder
     }
 
     /// <summary>
-    /// The player's melee weapon: banishes any enemy it touches (see
-    /// EnemyBanisher) and always flies back to its spot on the weapon rack
-    /// (see Axe), never the hand - drop it or throw it, it always comes home.
-    /// The root pivot sits at the axe head so EnemyBanisher's overlap check
-    /// (centred on transform.position) covers the head rather than the
-    /// handle, and the only collider on the rigidbody spans the handle so the
-    /// hand can only grab it there, by the haft, never by the head.
+    /// The only weapon: a Y-shaped frame (grip + two prongs) with the fork
+    /// between the prong tips as the shot's origin (see Slingshot). Pivot sits
+    /// at the middle of the grip. Only the grip is collidable, so a hand can
+    /// only take it by the handle, never by the prongs.
     /// </summary>
-    static Axe BuildAxe(Transform parent, Transform rackPoint)
+    static Slingshot BuildSlingshot(Transform parent, Transform rackPoint)
     {
-        var root = new GameObject("Axe");
+        var root = new GameObject("Slingshot");
         root.transform.SetParent(parent, false);
-
-        const float k_HandleLength = 0.5f;
-        var handleGripOffset = new Vector3(0f, -k_HandleLength * 0.58f, 0f);
-
-        // Starts exactly at its resting spot on the rack.
         root.transform.localPosition = rackPoint.localPosition;
         root.transform.localRotation = rackPoint.localRotation;
 
-        var handle = CreatePrimitive("Handle", PrimitiveType.Cylinder, root.transform,
-            new Vector3(0f, -k_HandleLength * 0.5f, 0f), new Vector3(0.028f, k_HandleLength * 0.5f, 0.028f), s_Trunk);
-        Object.DestroyImmediate(handle.GetComponent<Collider>());
+        CreatePrimitive("Grip", PrimitiveType.Cylinder, root.transform,
+            Vector3.zero, new Vector3(0.04f, 0.07f, 0.04f), s_Trunk);
+        CreatePrimitive("Grip Wrap", PrimitiveType.Cylinder, root.transform,
+            new Vector3(0f, -0.01f, 0f), new Vector3(0.05f, 0.045f, 0.05f), s_GripWrap);
 
-        var head = CreatePrimitive("Head", PrimitiveType.Cube, root.transform,
-            Vector3.zero, new Vector3(0.05f, 0.08f, 0.05f), s_DarkMetal);
-        Object.DestroyImmediate(head.GetComponent<Collider>());
+        var leftProng = CreatePrimitive("Left Prong", PrimitiveType.Cylinder, root.transform,
+            new Vector3(-0.03f, 0.122f, 0f), new Vector3(0.026f, 0.06f, 0.026f), s_Trunk);
+        leftProng.transform.localRotation = Quaternion.Euler(0f, 0f, 30f);
+        var rightProng = CreatePrimitive("Right Prong", PrimitiveType.Cylinder, root.transform,
+            new Vector3(0.03f, 0.122f, 0f), new Vector3(0.026f, 0.06f, 0.026f), s_Trunk);
+        rightProng.transform.localRotation = Quaternion.Euler(0f, 0f, -30f);
 
-        var blade = CreatePrimitive("Blade", PrimitiveType.Cube, root.transform,
-            new Vector3(0.11f, 0.02f, 0f), new Vector3(0.2f, 0.16f, 0.018f), s_Metal);
-        blade.transform.localRotation = Quaternion.Euler(0f, 0f, -12f);
-        Object.DestroyImmediate(blade.GetComponent<Collider>());
+        foreach (var collider in root.GetComponentsInChildren<Collider>())
+            Object.DestroyImmediate(collider);
 
-        var poll = CreatePrimitive("Poll", PrimitiveType.Cube, root.transform,
-            new Vector3(-0.045f, 0f, 0f), new Vector3(0.06f, 0.05f, 0.05f), s_DarkMetal);
-        Object.DestroyImmediate(poll.GetComponent<Collider>());
+        var fork = new GameObject("Fork").transform;
+        fork.SetParent(root.transform, false);
+        fork.localPosition = new Vector3(0f, 0.17f, 0f);
+        var leftTip = new GameObject("Left Tip").transform;
+        leftTip.SetParent(root.transform, false);
+        leftTip.localPosition = new Vector3(-0.06f, 0.174f, 0f);
+        var rightTip = new GameObject("Right Tip").transform;
+        rightTip.SetParent(root.transform, false);
+        rightTip.localPosition = new Vector3(0.06f, 0.174f, 0f);
 
         var rigidbody = root.AddComponent<Rigidbody>();
-        rigidbody.mass = 0.9f;
+        rigidbody.mass = 0.3f;
         rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
         rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        // Physics never gets to spin this: an uncontrolled tumble (gravity, a knock
-        // against nearby clutter) was leaving the axe in random, "flipped" looking
-        // orientations. Rotation only ever changes by explicit grab/throw handling.
-        rigidbody.constraints = RigidbodyConstraints.FreezeRotation;
 
-        // Only the handle is collidable, so both near-hand and distance-hand
-        // grab can only take hold of the axe by its handle, never by the head.
-        var collider = root.AddComponent<CapsuleCollider>();
-        collider.center = handleGripOffset;
-        collider.height = k_HandleLength * 0.84f;
-        collider.radius = 0.03f;
-        // Low friction so the axe slides off nearby clutter (log pile, rack, campfire
-        // stones) instead of catching on it while thrown or homing back.
-        collider.material = s_LowFriction;
+        var grabCollider = root.AddComponent<CapsuleCollider>();
+        grabCollider.center = Vector3.zero;
+        grabCollider.height = 0.16f;
+        grabCollider.radius = 0.045f;
+        grabCollider.material = s_LowFriction;
 
         var grabbable = root.AddComponent<Grabbable>();
 
@@ -1225,43 +1365,35 @@ public static class GameSceneBuilder
         distanceHandGrab.InjectRigidbody(rigidbody);
         distanceHandGrab.InjectOptionalPointableElement(grabbable);
 
-        root.AddComponent<EnemyBanisher>();
+        var highlight = root.AddComponent<GrabHighlight>();
+        Wire(highlight, "m_GlowMaterial", s_GrabGlow);
+        SetEnum(highlight, "m_GrabSound", (int)GrabHighlight.GrabSound.None);
 
-        var axe = root.AddComponent<Axe>();
-        Wire(axe, "m_RackPoint", rackPoint);
+        var slingshot = root.AddComponent<Slingshot>();
+        Wire(slingshot, "m_RackPoint", rackPoint);
+        Wire(slingshot, "m_Fork", fork);
+        Wire(slingshot, "m_LeftTip", leftTip);
+        Wire(slingshot, "m_RightTip", rightTip);
+        Wire(slingshot, "m_BandMaterial", s_SlingBand);
+        Wire(slingshot, "m_TargetGlowMaterial", s_GrabGlow);
 
-        return axe;
+        return slingshot;
     }
 
     /// <summary>
     /// Keeps the weapon rack's ember pile stocked (see EmberAmmoSpawner) and
-    /// builds the band the resortera draws while aiming. Grabbing a ball is
-    /// the whole invocation now - there's no separate axe-must-be-free gate
-    /// and no fire cost, just a limited, replenished supply like the log pile.
+    /// tells each ember which Slingshot to draw against. No fire cost, just a
+    /// limited, replenished supply like the log pile.
     /// </summary>
     static void BuildEmberAmmoSpawner(GameObject systems, Transform pileOrigin,
-        GameObject emberPrefab, Transform leftHand, Transform rightHand)
+        GameObject emberPrefab, Slingshot slingshot)
     {
-        // On its own GameObject so toggling it off never disables anything else's
-        // Update() along with it.
-        var bandGo = new GameObject("Sling Band");
-        bandGo.transform.SetParent(systems.transform, false);
-        var band = bandGo.AddComponent<LineRenderer>();
-        band.positionCount = 2;
-        band.startWidth = 0.015f;
-        band.endWidth = 0.015f;
-        band.sharedMaterial = s_SlingBand;
-        band.useWorldSpace = true;
-        bandGo.SetActive(false);
-
         var spawnerGo = new GameObject("Ember Ammo Spawner");
         spawnerGo.transform.SetParent(systems.transform, false);
         var spawner = spawnerGo.AddComponent<EmberAmmoSpawner>();
         Wire(spawner, "m_EmberPrefab", emberPrefab);
         Wire(spawner, "m_PileOrigin", pileOrigin);
-        Wire(spawner, "m_LeftHand", leftHand);
-        Wire(spawner, "m_RightHand", rightHand);
-        Wire(spawner, "m_Band", band);
+        Wire(spawner, "m_Slingshot", slingshot);
     }
 
     /// <summary>
@@ -1323,6 +1455,10 @@ public static class GameSceneBuilder
         audio.spatialBlend = 1f;
 
         root.AddComponent<SlingEmberHandle>();
+
+        var emberHighlight = root.AddComponent<GrabHighlight>();
+        Wire(emberHighlight, "m_GlowMaterial", s_GrabGlow);
+        SetEnum(emberHighlight, "m_GrabSound", (int)GrabHighlight.GrabSound.None);
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(root, $"{k_PrefabFolder}/Ember.prefab");
         Object.DestroyImmediate(root);
@@ -1387,6 +1523,13 @@ public static class GameSceneBuilder
         var path = $"{k_MaterialFolder}/{name}.physicMaterial";
         AssetDatabase.CreateAsset(material, path);
         return material;
+    }
+
+    static void SetEnum(Object target, string propertyName, int value)
+    {
+        var serialized = new SerializedObject(target);
+        serialized.FindProperty(propertyName).enumValueIndex = value;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
     }
 
     static void Wire(Object target, string propertyName, Object value)

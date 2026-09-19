@@ -12,6 +12,7 @@ using UnityEngine.Events;
 /// the Meta Interaction SDK components attached by the scene builder.
 /// </summary>
 [RequireComponent(typeof(Grabbable))]
+[RequireComponent(typeof(GrabHighlight))]
 public class Log : MonoBehaviour
 {
     [SerializeField]
@@ -61,6 +62,12 @@ public class Log : MonoBehaviour
 
         m_Consumed = true;
         campfire.AddFuel(m_FuelValue);
+
+        // Without haptics the player has to see and hear the log catch: a whoosh at
+        // the fire, a bright flash and a flare-up of the flames.
+        campfire.Flare();
+        ProceduralSfx.PlayAt(ProceduralSfx.FireWhoosh, campfire.transform.position + Vector3.up * 0.3f, 1f);
+        FadingGlow.Spawn(campfire.transform.position + Vector3.up * 0.35f, 0.8f, new Color(1.6f, 0.7f, 0.15f), 0.5f);
 
         if (m_ConsumeEffect != null)
             Instantiate(m_ConsumeEffect, transform.position, Quaternion.identity);

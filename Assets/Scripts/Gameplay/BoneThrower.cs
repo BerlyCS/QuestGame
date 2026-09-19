@@ -5,7 +5,7 @@ using UnityEngine.Events;
 /// <summary>
 /// The Lanzahuesos. Walks straight toward the campfire exactly like the
 /// Caminante, but stops well short - at m_StopDistance (8 m) - and never
-/// gets any closer: deliberately outside comfortable axe range (see
+/// gets any closer: deliberately out of easy reach (see
 /// enemigos.md). From there it lobs a bone at the fire on an interval; each
 /// impact drains fuel. Same rule as Skeleton: no reference to the player at
 /// all, only to the campfire. Glows brighter than a Caminante so it reads at

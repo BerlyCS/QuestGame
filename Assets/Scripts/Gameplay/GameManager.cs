@@ -3,15 +3,16 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Owns the two ways the night ends. Cero UI (see CLAUDE.md): no text, no Game
-/// Over screen, no buttons - the only feedback is the world going bright or
-/// black, then the scene reloads.
+/// Owns the ways the night ends. Cero UI (see CLAUDE.md): no text, no Game
+/// Over screen, no buttons - the world goes bright with a calm birdsong on
+/// victory, or black with a sinister laugh on defeat, then the scene reloads.
 ///
 /// Victory: survive <see cref="m_SurvivalDuration"/> seconds. Every Caminante
 /// freezes and collapses, the world lights up for
 /// <see cref="m_VictoryLitDuration"/> seconds, then restarts.
 ///
-/// Defeat: the campfire goes out (CampfireFuel.OnExtinguished). The world
+/// Defeat: the campfire goes out (CampfireFuel.OnExtinguished) or the player's
+/// life runs out (PlayerHealth.OnDied). The world
 /// fades to black over <see cref="m_DefeatFadeDuration"/> seconds, then
 /// restarts at the <see cref="m_DefeatRestartDelay"/> mark.
 /// </summary>
@@ -23,6 +24,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] NightEnvironmentController m_NightEnvironment;
     [SerializeField] SkeletonSpawner m_SkeletonSpawner;
     [SerializeField] BoneThrowerSpawner m_BoneThrowerSpawner;
+    [SerializeField] HunterSpawner m_HunterSpawner;
+    [SerializeField] PlayerHealth m_PlayerHealth;
 
     [Header("Victory")]
     [SerializeField] float m_SurvivalDuration = 180f;
@@ -30,7 +33,7 @@ public class GameManager : MonoBehaviour
 
     [Header("Defeat")]
     [SerializeField] float m_DefeatFadeDuration = 1.5f;
-    [SerializeField] float m_DefeatRestartDelay = 3f;
+    [SerializeField] float m_DefeatRestartDelay = 5f;
 
     [Header("Ending twist (see DISEÑO.md 1.3)")]
     [SerializeField] Renderer m_ChestRenderer;
@@ -39,20 +42,24 @@ public class GameManager : MonoBehaviour
     float m_Elapsed;
     bool m_GameOver;
 
-    /// <summary>Survival progress toward victory, 0-1. Read by DawnQuadController -
-    /// the only progress indicator in the game (see CLAUDE.md: cero UI).</summary>
+    /// <summary>Survival progress toward victory, 0-1. Read by NightEnvironmentController,
+    /// which brings the dawn in across the whole sky.</summary>
     public float SurvivalNormalized => m_SurvivalDuration <= 0f ? 0f : Mathf.Clamp01(m_Elapsed / m_SurvivalDuration);
 
     void OnEnable()
     {
         if (m_Campfire != null)
             m_Campfire.OnExtinguished.AddListener(HandleExtinguished);
+        if (m_PlayerHealth != null)
+            m_PlayerHealth.OnDied.AddListener(HandleExtinguished);
     }
 
     void OnDisable()
     {
         if (m_Campfire != null)
             m_Campfire.OnExtinguished.RemoveListener(HandleExtinguished);
+        if (m_PlayerHealth != null)
+            m_PlayerHealth.OnDied.RemoveListener(HandleExtinguished);
     }
 
     void Update()
@@ -87,6 +94,8 @@ public class GameManager : MonoBehaviour
             m_SkeletonSpawner.enabled = false;
         if (m_BoneThrowerSpawner != null)
             m_BoneThrowerSpawner.enabled = false;
+        if (m_HunterSpawner != null)
+            m_HunterSpawner.enabled = false;
 
         foreach (var skeleton in Object.FindObjectsByType<Skeleton>(FindObjectsInactive.Exclude))
             skeleton.Collapse();
@@ -102,6 +111,7 @@ public class GameManager : MonoBehaviour
         if (m_ChestRenderer != null && m_TeethMaterial != null)
             m_ChestRenderer.sharedMaterial = m_TeethMaterial;
 
+        PlayEndSound(ProceduralSfx.BirdSong);
         StartCoroutine(RestartAfter(m_VictoryLitDuration));
     }
 
@@ -113,8 +123,19 @@ public class GameManager : MonoBehaviour
             m_SkeletonSpawner.enabled = false;
         if (m_BoneThrowerSpawner != null)
             m_BoneThrowerSpawner.enabled = false;
+        if (m_HunterSpawner != null)
+            m_HunterSpawner.enabled = false;
 
+        PlayEndSound(ProceduralSfx.SinisterLaugh);
         StartCoroutine(FadeToBlackThenRestart());
+    }
+
+    void PlayEndSound(AudioClip clip)
+    {
+        var source = gameObject.AddComponent<AudioSource>();
+        source.spatialBlend = 0f;
+        source.playOnAwake = false;
+        source.PlayOneShot(clip);
     }
 
     IEnumerator FadeToBlackThenRestart()

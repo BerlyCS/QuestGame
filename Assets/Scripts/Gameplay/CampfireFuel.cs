@@ -17,15 +17,15 @@ public class CampfireFuel : MonoBehaviour
     [Header("Fuel (seconds)")]
     [SerializeField]
     [Tooltip("Maximum fuel the fire can hold, in seconds.")]
-    float m_MaxFuel = 60f;
+    float m_MaxFuel = 90f;
 
     [SerializeField]
     [Tooltip("Fuel the fire starts with, in seconds.")]
-    float m_StartingFuel = 35f;
+    float m_StartingFuel = 55f;
 
     [SerializeField]
     [Tooltip("Fuel consumed per second of real time. The fire can burn out completely.")]
-    float m_BurnRatePerSecond = 1f;
+    float m_BurnRatePerSecond = 0.55f;
 
     [Header("Fire Light")]
     [SerializeField] Light m_FireLight;
@@ -56,6 +56,7 @@ public class CampfireFuel : MonoBehaviour
     [SerializeField] UnityEvent m_OnExtinguished = new UnityEvent();
 
     float m_CurrentFuel;
+    float m_Flare;
     bool m_WasBurning;
     AudioSource m_FireAudio;
 
@@ -89,6 +90,12 @@ public class CampfireFuel : MonoBehaviour
 
     void Update()
     {
+        if (m_Flare > 0f)
+        {
+            m_Flare = Mathf.Max(0f, m_Flare - Time.deltaTime * 1.6f);
+            ApplyVisuals();
+        }
+
         if (m_CurrentFuel <= 0f)
             return;
 
@@ -122,6 +129,21 @@ public class CampfireFuel : MonoBehaviour
         m_WasBurning = burning;
     }
 
+    /// <summary>
+    /// Brief flare-up when a log catches: a burst of flame particles and a light
+    /// surge that decays in well under a second. Purely visual, no fuel change.
+    /// </summary>
+    public void Flare()
+    {
+        if (!IsBurning)
+            return;
+
+        m_Flare = 1f;
+        if (m_FlameParticles != null)
+            m_FlameParticles.Emit(30);
+        ApplyVisuals();
+    }
+
     public void SetFuel(float amount)
     {
         m_CurrentFuel = Mathf.Clamp(amount, 0f, m_MaxFuel);
@@ -137,7 +159,7 @@ public class CampfireFuel : MonoBehaviour
         if (m_FireLight != null)
         {
             m_FireLight.enabled = n > 0f;
-            m_FireLight.intensity = Mathf.Lerp(m_MinLightIntensity, m_MaxLightIntensity, curved);
+            m_FireLight.intensity = Mathf.Lerp(m_MinLightIntensity, m_MaxLightIntensity, curved) * (1f + m_Flare * 0.8f);
             m_FireLight.range = Mathf.Lerp(m_MinLightRange, m_MaxLightRange, curved);
             m_FireLight.color = Color.Lerp(m_EmberColor, m_FlameColor, curved);
         }

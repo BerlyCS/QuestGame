@@ -25,6 +25,10 @@ public class DebugKeys : MonoBehaviour
     BoneThrowerSpawner m_BoneThrowerSpawner;
 
     [SerializeField]
+    [Tooltip("'3' force-spawns one Cazador (attacks the player) 9 m away.")]
+    HunterSpawner m_HunterSpawner;
+
+    [SerializeField]
     [Tooltip("'N' jumps the survival clock to 170 s, 10 s before victory.")]
     GameManager m_GameManager;
 
@@ -46,6 +50,9 @@ public class DebugKeys : MonoBehaviour
 
         if (keyboard.digit2Key.wasPressedThisFrame && m_BoneThrowerSpawner != null)
             m_BoneThrowerSpawner.DebugSpawnNow();
+
+        if (keyboard.digit3Key.wasPressedThisFrame && m_HunterSpawner != null)
+            m_HunterSpawner.DebugSpawnNow();
 
         if (keyboard.nKey.wasPressedThisFrame && m_GameManager != null)
             m_GameManager.DebugSetElapsed(m_SkipToSeconds);

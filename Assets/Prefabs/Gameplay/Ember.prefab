@@ -17,6 +17,7 @@ GameObject:
   - component: {fileID: 5144480586576962351}
   - component: {fileID: 2155796756952443142}
   - component: {fileID: 7168920266134356196}
+  - component: {fileID: 6069714798478701398}
   m_Layer: 0
   m_Name: Ember
   m_TagString: Untagged
@@ -223,6 +224,9 @@ MonoBehaviour:
   m_MissGlowDuration: 3
   m_MissGlowScale: 2
   m_GlowColor: {r: 1, g: 0.6, b: 0.15, a: 1}
+  m_AssistConeDegrees: 12
+  m_AssistDuration: 0.6
+  m_AssistTurnSpeed: 240
   m_OnConsumed:
     m_PersistentCalls:
       m_Calls: []
@@ -399,12 +403,28 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlingEmberHandle
   m_MinStretch: 0.15
-  m_MaxStretch: 0.65
+  m_MaxStretch: 0.45
   m_MinLaunchSpeed: 6
   m_MaxLaunchSpeed: 22
   m_ColorLow: {r: 1, g: 0.5, b: 0.1, a: 1}
   m_ColorHigh: {r: 1, g: 1, b: 1, a: 1}
-  m_BandIdleColor: {r: 0.6, g: 0.3, b: 0.1, a: 1}
+--- !u!114 &6069714798478701398
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1104658570455149726}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7424d858363c84d3d8db1e673d51ab8a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GrabHighlight
+  m_GlowMaterial: {fileID: 2100000, guid: 0daabcd3e8aa34567a97f5d424e77928, type: 2}
+  m_HoverColor: {r: 1, g: 0.7, b: 0.2, a: 1}
+  m_HeldColor: {r: 1, g: 0.95, b: 0.65, a: 1}
+  m_HaloThickness: 0.025
+  m_GrabSound: 0
 --- !u!1 &2626841790202243716
 GameObject:
   m_ObjectHideFlags: 0

@@ -3,13 +3,16 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// The Caminante. Walks in a straight line to the campfire and never the
+/// The Caminante (and, with <see cref="m_HuntsPlayer"/>, the Cazador). The
+/// Caminante walks in a straight line to the campfire and never the
 /// player - it has no reference to the player at all, so it can brush past
 /// without reacting, which is the moment that teaches the whole game without
 /// a word (see enemigos.md). Kneels and attacks the fire once close, but
 /// backs off while the fire is strong: the light repels it. Simple
 /// primitive-based presentation with a procedural walk bob so it reads as
-/// "alive".
+/// "alive". The Cazador is the exception to "enemies ignore the player": a
+/// faster, red-eyed skeleton that walks up to the player's head and claws at
+/// them, taking life through PlayerHealth. The two are told apart on sight.
 /// </summary>
 [DisallowMultipleComponent]
 public class Skeleton : MonoBehaviour
@@ -23,6 +26,13 @@ public class Skeleton : MonoBehaviour
     [SerializeField] float m_KneelDistance = 1.6f;
     [SerializeField] float m_AttackInterval = 1.4f;
     [SerializeField] float m_AttackFuelDrain = 3.5f;
+
+    [Header("Hunter (attacks the player instead of the fire)")]
+    [SerializeField] bool m_HuntsPlayer;
+    [SerializeField] float m_HunterMoveSpeed = 0.4f;
+    [SerializeField] float m_PlayerAttackRange = 1.0f;
+    [SerializeField] float m_PlayerAttackInterval = 1.2f;
+    [SerializeField] float m_PlayerDamage = 12f;
 
     [Header("Repelled by light")]
     [SerializeField] float m_RepelFuelThreshold = 0.75f;
@@ -47,6 +57,7 @@ public class Skeleton : MonoBehaviour
 
     int m_Hits;
     float m_BobPhase;
+    PlayerHealth m_Player;
     float m_NextAttackTime;
     float m_HitFlashUntil;
     Vector3 m_BodyBasePosition;
@@ -58,9 +69,18 @@ public class Skeleton : MonoBehaviour
     /// <summary>Wired by SkeletonSpawner at spawn time; the only thing this enemy ever targets.</summary>
     public void SetCampfire(CampfireFuel campfire) => m_Campfire = campfire;
 
+    /// <summary>Wired by HunterSpawner: makes this skeleton a Cazador that goes for the player.</summary>
+    public void SetPlayer(PlayerHealth player)
+    {
+        m_Player = player;
+        m_HuntsPlayer = true;
+        m_MoveSpeed = m_HunterMoveSpeed;
+    }
+
     void Awake()
     {
         m_Hits = m_MaxHits;
+
         if (m_Body != null)
             m_BodyBasePosition = m_Body.localPosition;
         CacheColors();
@@ -74,6 +94,12 @@ public class Skeleton : MonoBehaviour
 
     void Update()
     {
+        if (m_HuntsPlayer)
+        {
+            UpdateHunter();
+            return;
+        }
+
         if (!IsAlive || m_Campfire == null)
             return;
 
@@ -109,6 +135,55 @@ public class Skeleton : MonoBehaviour
         UpdateHitFlash();
     }
 
+    void UpdateHunter()
+    {
+        if (!IsAlive || m_Player == null || m_Player.Head == null || !m_Player.IsAlive)
+            return;
+
+        Vector3 toPlayer = m_Player.Head.position - transform.position;
+        toPlayer.y = 0f;
+
+        if (toPlayer.magnitude > m_PlayerAttackRange)
+        {
+            MoveToward(toPlayer);
+            AnimateWalk();
+        }
+        else
+        {
+            // In range: stand still and face them. Never step closer (it walked through the player).
+            FaceToward(toPlayer);
+            AnimateClaw();
+            if (Time.time >= m_NextAttackTime)
+            {
+                m_NextAttackTime = Time.time + m_PlayerAttackInterval;
+                m_Player.TakeDamage(m_PlayerDamage);
+            }
+        }
+
+        UpdateHitFlash();
+    }
+
+    /// <summary>Arms raised and raking forward: reads as an attack, not the fire-kneel.</summary>
+    void AnimateClaw()
+    {
+        float swipe = Mathf.Sin(Time.time * 12f) * 25f;
+        if (m_Body != null)
+            m_Body.localPosition = m_BodyBasePosition;
+        if (m_LeftArm != null)
+            m_LeftArm.localRotation = Quaternion.Euler(-95f + swipe, 0f, 0f);
+        if (m_RightArm != null)
+            m_RightArm.localRotation = Quaternion.Euler(-95f - swipe, 0f, 0f);
+    }
+
+    void FaceToward(Vector3 direction)
+    {
+        if (direction.sqrMagnitude <= 0.0001f)
+            return;
+
+        Quaternion look = Quaternion.LookRotation(direction.normalized, Vector3.up);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, look, m_TurnSpeed * Time.deltaTime);
+    }
+
     void MoveToward(Vector3 direction)
     {
         if (direction.sqrMagnitude <= 0.0001f)
@@ -123,7 +198,8 @@ public class Skeleton : MonoBehaviour
     void AnimateWalk()
     {
         m_BobPhase += Time.deltaTime * m_BobFrequency;
-        float bob = Mathf.Abs(Mathf.Sin(m_BobPhase)) * m_BobAmplitude;
+        float sine = Mathf.Sin(m_BobPhase);
+        float bob = Mathf.Abs(sine) * m_BobAmplitude;
         if (m_Body != null)
             m_Body.localPosition = m_BodyBasePosition + new Vector3(0f, bob, 0f);
 

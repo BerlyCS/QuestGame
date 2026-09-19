@@ -3,18 +3,17 @@ using Oculus.Interaction.HandGrab;
 using UnityEngine;
 
 /// <summary>
-/// Lets the player physically grab one of the resortera's ember balls (kept
-/// stocked on the weapon rack by EmberAmmoSpawner), pull it back away from
-/// whichever hand didn't grab it (the anchor), and let go to fire - the real
-/// pull vector aims the shot, exactly like a real two-handed slingshot,
-/// instead of a look-direction guess. Grabbing a ball is the whole
-/// invocation: there's no separate "summon" gesture.
+/// An ember ball (the slingshot's ammo, kept stocked on the weapon rack by
+/// EmberAmmoSpawner). Grab it with the hand that isn't holding the Slingshot
+/// frame and pull it back away from the fork: the ember-to-fork vector is
+/// the aim, the stretch is the power, and opening the hand fires. Without
+/// the frame in the other hand (or with a pull shorter than the minimum) the
+/// ember just drops, so an accidental release never wastes a real shot.
 ///
 /// Release is detected by polling Grabbable.SelectingPointsCount every frame
-/// rather than trusting the SDK's Select/Unselect events, for the same
-/// reason as the axe (see Axe.cs / armas.md): hand-tracking release is
-/// irregular, and the SDK's own live grab count is the one signal that can't
-/// be missed.
+/// rather than trusting the SDK's Select/Unselect events (hand-tracking
+/// release is irregular, see armas.md). Launch velocity comes from the pull
+/// vector, never from the SDK's unreliable release-velocity estimate.
 /// </summary>
 [RequireComponent(typeof(Grabbable))]
 [RequireComponent(typeof(Rigidbody))]
@@ -23,12 +22,11 @@ using UnityEngine;
 public class SlingEmberHandle : MonoBehaviour
 {
     [SerializeField] float m_MinStretch = 0.15f;
-    [SerializeField] float m_MaxStretch = 0.65f;
+    [SerializeField] float m_MaxStretch = 0.45f;
     [SerializeField] float m_MinLaunchSpeed = 6f;
     [SerializeField] float m_MaxLaunchSpeed = 22f;
     [SerializeField] Color m_ColorLow = new Color(1f, 0.5f, 0.1f);
     [SerializeField] Color m_ColorHigh = Color.white;
-    [SerializeField] Color m_BandIdleColor = new Color(0.6f, 0.3f, 0.1f);
 
     Grabbable m_Grabbable;
     Rigidbody m_Rigidbody;
@@ -39,11 +37,7 @@ public class SlingEmberHandle : MonoBehaviour
     AudioSource m_Audio;
     AudioClip m_StretchClip;
     AudioClip m_ShotClip;
-
-    Transform m_LeftHand;
-    Transform m_RightHand;
-    Transform m_AnchorHand;
-    LineRenderer m_Band;
+    Slingshot m_Slingshot;
 
     bool m_WasHeld;
     bool m_HasFired;
@@ -55,9 +49,8 @@ public class SlingEmberHandle : MonoBehaviour
         m_Projectile = GetComponent<EmberProjectile>();
         m_HandGrab = GetComponent<HandGrabInteractable>();
         m_DistanceHandGrab = GetComponent<DistanceHandGrabInteractable>();
-        // The visible mesh lives on a child ("Shape"), not the root the grab
-        // components sit on.
-        m_Renderer = GetComponentInChildren<Renderer>();
+        // The visible mesh is the "Shape" child (GrabHighlight adds its own shell below it).
+        m_Renderer = transform.Find("Shape").GetComponent<Renderer>();
 
         m_Audio = GetComponent<AudioSource>();
         m_Audio.playOnAwake = false;
@@ -65,30 +58,27 @@ public class SlingEmberHandle : MonoBehaviour
         m_StretchClip = CreateStretchClip();
         m_ShotClip = CreateShotClip();
 
-        // Waits kinematic and weightless until grabbed, like the axe resting in
-        // hand: physics only takes over once it's actually fired or dropped.
+        // Waits kinematic and weightless until grabbed: physics only takes over
+        // once it's actually fired or dropped.
         m_Rigidbody.isKinematic = true;
         m_Rigidbody.useGravity = false;
     }
 
-    public void Initialize(Transform leftHand, Transform rightHand, LineRenderer band)
+    public void Initialize(Slingshot slingshot)
     {
-        m_LeftHand = leftHand;
-        m_RightHand = rightHand;
-        m_Band = band;
+        m_Slingshot = slingshot;
     }
+
+    bool CanDraw => m_Slingshot != null && m_Slingshot.IsHeld;
 
     void Update()
     {
         bool held = m_Grabbable.SelectingPointsCount > 0;
 
-        if (held && !m_WasHeld)
-            OnGrabbed();
-
         if (held)
             UpdateHeld();
         else if (m_WasHeld && !m_HasFired)
-            Fire();
+            Release();
 
         m_WasHeld = held;
     }
@@ -97,78 +87,51 @@ public class SlingEmberHandle : MonoBehaviour
     {
         // After the SDK's own grab-follow has moved us this frame: keep the draw
         // from stretching past the max, like a real elastic band's limit.
-        if (m_Grabbable.SelectingPointsCount > 0)
-            ClampToMaxStretch();
-    }
-
-    void OnGrabbed()
-    {
-        Vector3 grabPoint = m_Grabbable.GrabPoints.Count > 0 ? m_Grabbable.GrabPoints[0].position : transform.position;
-        float leftDist = m_LeftHand != null ? Vector3.Distance(grabPoint, m_LeftHand.position) : float.MaxValue;
-        float rightDist = m_RightHand != null ? Vector3.Distance(grabPoint, m_RightHand.position) : float.MaxValue;
-        m_AnchorHand = leftDist <= rightDist ? m_RightHand : m_LeftHand;
-
-        SetBandActive(true);
-    }
-
-    void ClampToMaxStretch()
-    {
-        if (m_AnchorHand == null)
+        if (m_Grabbable.SelectingPointsCount == 0 || !CanDraw)
             return;
 
-        Vector3 offset = transform.position - m_AnchorHand.position;
+        Vector3 offset = transform.position - m_Slingshot.ForkPosition;
         if (offset.magnitude > m_MaxStretch)
-            transform.position = m_AnchorHand.position + offset.normalized * m_MaxStretch;
+            transform.position = m_Slingshot.ForkPosition + offset.normalized * m_MaxStretch;
     }
 
     void UpdateHeld()
     {
-        if (m_AnchorHand == null)
-            return;
-
-        float stretch = Vector3.Distance(transform.position, m_AnchorHand.position);
-        float powerT = Mathf.InverseLerp(m_MinStretch, m_MaxStretch, Mathf.Clamp(stretch, m_MinStretch, m_MaxStretch));
-
-        SetColor(Color.Lerp(m_ColorLow, m_ColorHigh, powerT));
-        UpdateBandPositions();
-        UpdateStretchAudio(stretch > m_MinStretch, powerT);
-    }
-
-    void UpdateBandPositions()
-    {
-        if (m_Band == null || m_AnchorHand == null)
-            return;
-
-        m_Band.SetPosition(0, m_AnchorHand.position);
-        m_Band.SetPosition(1, transform.position);
-    }
-
-    void SetBandActive(bool active)
-    {
-        if (m_Band == null)
-            return;
-
-        m_Band.gameObject.SetActive(active);
-        if (!active)
+        if (!CanDraw)
         {
-            m_Band.startColor = m_BandIdleColor;
-            m_Band.endColor = m_BandIdleColor;
+            if (m_Slingshot != null)
+                m_Slingshot.ClearPull();
+            StopStretchAudio();
+            return;
         }
+
+        Vector3 displacement = transform.position - m_Slingshot.ForkPosition;
+        float stretch = displacement.magnitude;
+        float powerT = PowerFor(stretch);
+        Color color = Color.Lerp(m_ColorLow, m_ColorHigh, powerT);
+
+        SetColor(color);
+        m_Slingshot.SetPull(transform.position, color);
+        UpdateStretchAudio(stretch > m_MinStretch, powerT);
+
+        if (stretch > m_MinStretch)
+            m_Slingshot.ShowArc(-displacement.normalized * SpeedFor(powerT), color);
+        else
+            m_Slingshot.ClearPull(); // too short to fire: no arc, no band pull
     }
+
+    float PowerFor(float stretch) =>
+        Mathf.InverseLerp(m_MinStretch, m_MaxStretch, Mathf.Clamp(stretch, m_MinStretch, m_MaxStretch));
+
+    float SpeedFor(float powerT) => Mathf.Lerp(m_MinLaunchSpeed, m_MaxLaunchSpeed, powerT);
 
     void SetColor(Color color)
     {
-        if (m_Renderer != null)
-        {
-            m_Renderer.material.color = color;
-            m_Renderer.material.SetColor("_EmissionColor", color);
-        }
+        if (m_Renderer == null)
+            return;
 
-        if (m_Band != null)
-        {
-            m_Band.startColor = color;
-            m_Band.endColor = color;
-        }
+        m_Renderer.material.color = color;
+        m_Renderer.material.SetColor("_EmissionColor", color);
     }
 
     void UpdateStretchAudio(bool active, float powerT)
@@ -183,9 +146,9 @@ public class SlingEmberHandle : MonoBehaviour
             }
             m_Audio.pitch = Mathf.Lerp(0.8f, 1.8f, powerT);
         }
-        else if (m_Audio.isPlaying && m_Audio.clip == m_StretchClip)
+        else
         {
-            m_Audio.Stop();
+            StopStretchAudio();
         }
     }
 
@@ -195,26 +158,32 @@ public class SlingEmberHandle : MonoBehaviour
             m_Audio.Stop();
     }
 
-    void Fire()
+    void Release()
     {
         m_HasFired = true;
-        SetBandActive(false);
         StopStretchAudio();
         SetGrabbableEnabled(false);
 
-        Vector3 displacement = m_AnchorHand != null
-            ? transform.position - m_AnchorHand.position
-            : transform.forward * m_MinStretch;
-        if (displacement.sqrMagnitude < 0.0001f)
-            displacement = transform.forward * m_MinStretch;
+        Vector3 displacement = CanDraw ? transform.position - m_Slingshot.ForkPosition : Vector3.zero;
+        if (m_Slingshot != null)
+            m_Slingshot.ClearPull();
 
-        float stretch = displacement.magnitude;
-        float powerT = Mathf.InverseLerp(m_MinStretch, m_MaxStretch, Mathf.Clamp(stretch, m_MinStretch, m_MaxStretch));
-        float speed = Mathf.Lerp(m_MinLaunchSpeed, m_MaxLaunchSpeed, powerT);
+        if (displacement.magnitude < m_MinStretch)
+        {
+            // No frame in the other hand, or barely pulled: just let it fall.
+            m_Rigidbody.isKinematic = false;
+            m_Rigidbody.useGravity = true;
+            return;
+        }
 
-        // Flies back through the anchor and beyond, opposite the pull - real
-        // slingshot physics, aimed by wherever the player actually drew it to.
+        float speed = SpeedFor(PowerFor(displacement.magnitude));
+
+        // Flies back through the fork and beyond, opposite the pull - real slingshot
+        // physics, aimed by wherever the player actually drew it to.
         Vector3 direction = -displacement.normalized;
+
+        // Muzzle flash at the fork: without haptics the shot has to be seen (CLAUDE.md).
+        FadingGlow.Spawn(m_Slingshot.ForkPosition, 0.22f, new Color(2f, 1.4f, 0.5f), 0.12f);
 
         m_Rigidbody.isKinematic = false;
         m_Rigidbody.useGravity = true;

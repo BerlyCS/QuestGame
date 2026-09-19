@@ -6,7 +6,7 @@ using UnityEngine;
 /// builder places at start, plus any this spawner creates) and drops in a
 /// replacement, after a short delay, each time one is consumed (fired and it
 /// hits something, or missed and lands). Also wires each ember's
-/// SlingEmberHandle with the hand/band references it needs, so grabbing any
+/// SlingEmberHandle with the Slingshot it draws against, so grabbing any
 /// ball off the rack works immediately - no separate setup step.
 /// </summary>
 [DisallowMultipleComponent]
@@ -17,20 +17,18 @@ public class EmberAmmoSpawner : MonoBehaviour
 
     [Header("Pile")]
     [SerializeField] Transform m_PileOrigin;
-    [SerializeField] float m_PileRadius = 0.08f;
+    [SerializeField] float m_PileRadius = 0.07f;
     [SerializeField] float m_DropHeight = 0.05f;
 
-    [Header("Hands and band (see SlingEmberHandle)")]
-    [SerializeField] Transform m_LeftHand;
-    [SerializeField] Transform m_RightHand;
-    [SerializeField] LineRenderer m_Band;
+    [Header("Slingshot (see SlingEmberHandle)")]
+    [SerializeField] Slingshot m_Slingshot;
 
     [Header("Stock")]
     [Tooltip("How many embers the rack should always settle back to.")]
-    [SerializeField] int m_MaxStock = 3;
+    [SerializeField] int m_MaxStock = 5;
 
     [Tooltip("Delay before a used ember is replaced, so restocking feels gradual rather than instant.")]
-    [SerializeField] float m_RestockDelay = 3f;
+    [SerializeField] float m_RestockDelay = 2f;
 
     int m_StockCount;
     int m_PendingRestocks;
@@ -64,7 +62,7 @@ public class EmberAmmoSpawner : MonoBehaviour
 
         var handle = ember.GetComponent<SlingEmberHandle>();
         if (handle != null)
-            handle.Initialize(m_LeftHand, m_RightHand, m_Band);
+            handle.Initialize(m_Slingshot);
     }
 
     void HandleConsumed()
