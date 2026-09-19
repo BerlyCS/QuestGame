@@ -2,9 +2,11 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// Drives the campfire: fuel drains over time and adding logs refuels it.
-/// Fuel level controls the fire light and flame particles, which the
-/// <see cref="NightEnvironmentController"/> reads to set overall darkness.
+/// Drives the campfire: fuel drains over time (down to a permanent ember floor,
+/// never fully out) and adding logs refuels it above that. Fuel level controls
+/// the fire light and flame particles, which <see cref="NightEnvironmentController"/>
+/// reads to set overall darkness and <see cref="CampRevealController"/> uses (via
+/// <see cref="OnFuelChanged"/>) to reveal the camp the first time the player feeds it.
 /// </summary>
 [DisallowMultipleComponent]
 public class CampfireFuel : MonoBehaviour
@@ -15,15 +17,24 @@ public class CampfireFuel : MonoBehaviour
     float m_MaxFuel = 1f;
 
     [SerializeField]
-    [Tooltip("Fuel the fire starts with (0-1 of max). Kept low so the camp opens on " +
-        "little more than an ember: only the fire and the log pile are lit, and the " +
-        "player has to feed it to reveal the rest of the camp.")]
+    [Tooltip("Fuel the fire starts with (0-1 of max). Low, so the scene opens on a faint " +
+        "ember: only the fire and the log pile give off any light. Should be at or " +
+        "above m_MinEmberFuelNormalized, otherwise it just snaps up to that floor.")]
     [Range(0f, 1f)]
-    float m_StartingFuelNormalized = 0.12f;
+    float m_StartingFuelNormalized = 0.08f;
 
     [SerializeField]
-    [Tooltip("How much fuel is consumed per second.")]
-    float m_BurnRatePerSecond = 0.012f;
+    [Tooltip("Fuel never decays below this (0-1 of max): the ember stays lit forever " +
+        "instead of the fire going out. Throwing logs in still burns down toward this " +
+        "floor over time, it just never crosses it.")]
+    [Range(0f, 1f)]
+    float m_MinEmberFuelNormalized = 0.08f;
+
+    [SerializeField]
+    [Tooltip("How much fuel is consumed per second above the ember floor. Tuned so a " +
+        "single log (see Log's m_FuelValue) keeps the fire built up for roughly a " +
+        "minute and a half before it settles back to an ember.")]
+    float m_BurnRatePerSecond = 0.0033f;
 
     [Header("Fire Light")]
     [SerializeField] Light m_FireLight;
@@ -56,19 +67,23 @@ public class CampfireFuel : MonoBehaviour
     public UnityEvent OnIgnited => m_OnIgnited;
     public UnityEvent OnExtinguished => m_OnExtinguished;
 
+    float EmberFloor => Mathf.Clamp01(m_MinEmberFuelNormalized) * m_MaxFuel;
+
     void Awake()
     {
-        m_CurrentFuel = Mathf.Clamp01(m_StartingFuelNormalized) * m_MaxFuel;
+        m_CurrentFuel = Mathf.Max(EmberFloor, Mathf.Clamp01(m_StartingFuelNormalized) * m_MaxFuel);
         m_WasBurning = IsBurning;
         ApplyVisuals();
     }
 
     void Update()
     {
-        if (m_CurrentFuel <= 0f)
+        float floor = EmberFloor;
+        if (m_CurrentFuel <= floor)
             return;
 
-        AddFuel(-m_BurnRatePerSecond * Time.deltaTime, false);
+        float next = Mathf.Max(floor, m_CurrentFuel - m_BurnRatePerSecond * Time.deltaTime);
+        AddFuel(next - m_CurrentFuel, false);
     }
 
     public void AddFuel(float amount)
