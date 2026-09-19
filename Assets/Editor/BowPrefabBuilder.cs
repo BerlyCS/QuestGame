@@ -69,18 +69,38 @@ public static class BowPrefabBuilder
 
         Material arrowMaterial = LoadAsset<Material>(k_ArrowMaterialPath);
 
-        // The original prefab flattens the visual by -45 degrees and then -90
-        // degrees again inside "Mesh"; reproducing that keeps the model upright.
+        // Both imported arrow models are authored pointing along +X: the tip
+        // apex is at the most positive X while the nock end of the shaft is at
+        // the most negative X. Rotating both with Rz(-90) (inside the "Mesh"
+        // node that applies Rx(-90)) turns that into the +Z flight direction,
+        // and pushing them forward by the nock distance makes the nock sit at
+        // the arrow origin (the point that gets parented to the string).
+        const float arrowScale = 0.033f;
+
+        Bounds shaftBounds = GetModelBounds(k_ArrowShaftModelPath);
+        Bounds tipBounds = GetModelBounds(k_ArrowTipModelPath);
+
+        float nockX = shaftBounds.min.x;
+        float apexX = tipBounds.max.x;
+        float nockForward = -nockX * arrowScale;
+        float arrowLength = (apexX - nockX) * arrowScale;
+
+        collider.center = new Vector3(0f, 0f, arrowLength * 0.5f);
+        collider.height = arrowLength;
+
         GameObject model = CreateEmpty("Model", root.transform, Vector3.zero, Quaternion.identity, Vector3.one);
         GameObject mesh = CreateEmpty("Mesh", model.transform, Vector3.zero, Quaternion.Euler(-90f, 0f, 0f), Vector3.one);
 
+        Vector3 arrowPartPosition = new Vector3(0f, -nockForward, 0f);
+        Quaternion arrowPartRotation = Quaternion.Euler(0f, 0f, -90f);
+
         InstantiateModel(k_ArrowShaftModelPath, mesh.transform,
-            new Vector3(0f, -0.3f, 0f), Quaternion.Euler(0f, -90f, 0f), Vector3.one * 0.033f, arrowMaterial);
+            arrowPartPosition, arrowPartRotation, Vector3.one * arrowScale, arrowMaterial);
 
         InstantiateModel(k_ArrowTipModelPath, mesh.transform,
-            new Vector3(0f, -0.302f, 0f), Quaternion.Euler(0f, 0f, -90f), Vector3.one * 0.033f, arrowMaterial);
+            arrowPartPosition, arrowPartRotation, Vector3.one * arrowScale, arrowMaterial);
 
-        Transform tip = CreateEmpty("Tip", mesh.transform, new Vector3(0f, -0.449f, 0f), Quaternion.identity, Vector3.one).transform;
+        Transform tip = CreateEmpty("Tip", mesh.transform, new Vector3(0f, -arrowLength, 0f), Quaternion.identity, Vector3.one).transform;
 
         AudioSource hitAudio = root.AddComponent<AudioSource>();
         hitAudio.clip = LoadAsset<AudioClip>(k_ArrowHitClipPath);
@@ -291,6 +311,34 @@ public static class BowPrefabBuilder
                 renderer.sharedMaterial = material;
             }
         }
+    }
+
+    /// <summary>
+    /// World-space bounds of an imported model with an identity transform, used
+    /// to derive its natural orientation and length before dressing the prefab.
+    /// </summary>
+    static Bounds GetModelBounds(string path)
+    {
+        GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (modelAsset == null)
+        {
+            Debug.LogWarning("[BowPrefabBuilder] Missing model: " + path);
+            return new Bounds(Vector3.zero, Vector3.one * 0.1f);
+        }
+
+        GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(modelAsset);
+        instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        instance.transform.localScale = Vector3.one;
+
+        Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+        Bounds bounds = renderers.Length > 0 ? renderers[0].bounds : new Bounds(Vector3.zero, Vector3.one * 0.1f);
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            bounds.Encapsulate(renderers[i].bounds);
+        }
+
+        Object.DestroyImmediate(instance);
+        return bounds;
     }
 
     static Material GetOrCreateLineMaterial()

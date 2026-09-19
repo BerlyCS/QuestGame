@@ -153,6 +153,13 @@ public class BowPullMeasurer : MonoBehaviour
             return;
         }
 
+        // Keep the arrow nocked for as long as the string is being held, even if
+        // the bow was grabbed after the string, so the draw always has an arrow.
+        if (m_Notch != null && m_Notch.NockedArrow == null)
+        {
+            m_Notch.EnsureNocked();
+        }
+
         PullAmount = CalculatePull(hand.position);
 
         if (m_StringMiddle != null)

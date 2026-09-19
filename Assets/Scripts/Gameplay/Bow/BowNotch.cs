@@ -4,8 +4,8 @@ using UnityEngine;
 /// Trigger volume on the bow string that catches a passing <see cref="Arrow"/>
 /// and nocks it, exactly like the socket-based notch from the OOT shooting
 /// gallery. It can also spawn an arrow on its own (see <see cref="m_ArrowPrefab"/>)
-/// so an arrow is always ready while the bow is held, which makes the bow
-/// usable without having to first fetch an arrow from the quiver.
+/// when the string is grabbed, so drawing the bow always has an arrow ready
+/// without having to first fetch one from the quiver.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 [DisallowMultipleComponent]
@@ -20,15 +20,10 @@ public class BowNotch : MonoBehaviour
     Transform m_StringMiddle;
 
     [SerializeField]
-    [Tooltip("Arrow spawned automatically while the bow is held. Optional.")]
+    [Tooltip("Arrow spawned when the string is grabbed. Optional.")]
     GameObject m_ArrowPrefab;
 
-    [SerializeField]
-    [Tooltip("Seconds between automatic arrows.")]
-    float m_AutoNockDelay = 0.4f;
-
     Arrow m_NockedArrow;
-    float m_NextAutoNockTime;
 
     public Arrow NockedArrow => m_NockedArrow;
 
@@ -41,22 +36,6 @@ public class BowNotch : MonoBehaviour
         {
             m_Bow = GetComponentInParent<Bow>();
         }
-    }
-
-    void Update()
-    {
-        if (m_NockedArrow != null || m_Bow == null || !m_Bow.IsHeld)
-        {
-            return;
-        }
-
-        if (Time.time < m_NextAutoNockTime)
-        {
-            return;
-        }
-
-        EnsureNocked();
-        m_NextAutoNockTime = Time.time + m_AutoNockDelay;
     }
 
     void OnTriggerEnter(Collider other)
