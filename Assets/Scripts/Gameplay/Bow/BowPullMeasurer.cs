@@ -43,7 +43,8 @@ public class BowPullMeasurer : MonoBehaviour
     HandGrabInteractor m_HandGrabInteractor;
     bool m_PullAudioPlayed;
 
-    Vector3 m_RestPosition;
+    Transform m_StringMiddleParent;
+    Vector3 m_RestLocalPosition;
     Vector3 m_GripLocalPosition;
     Quaternion m_GripLocalRotation;
 
@@ -55,9 +56,31 @@ public class BowPullMeasurer : MonoBehaviour
         m_GrabInteractable = GetComponentInChildren<GrabInteractable>(true);
         m_HandGrabInteractable = GetComponentInChildren<HandGrabInteractable>(true);
 
-        m_RestPosition = m_StringMiddle != null ? m_StringMiddle.position : Vector3.zero;
+        if (m_StringMiddle != null)
+        {
+            m_StringMiddleParent = m_StringMiddle.parent;
+            m_RestLocalPosition = m_StringMiddle.localPosition;
+        }
+
         m_GripLocalPosition = transform.localPosition;
         m_GripLocalRotation = transform.localRotation;
+    }
+
+    /// <summary>
+    /// World-space rest position of the string middle. It is derived from the
+    /// middle's local rest pose every frame so the string follows the bow while
+    /// the bow is being carried instead of staying anchored in world space.
+    /// </summary>
+    Vector3 RestWorldPosition()
+    {
+        if (m_StringMiddle == null)
+        {
+            return Vector3.zero;
+        }
+
+        return m_StringMiddleParent != null
+            ? m_StringMiddleParent.TransformPoint(m_RestLocalPosition)
+            : m_StringMiddle.position;
     }
 
     void OnEnable()
@@ -90,10 +113,26 @@ public class BowPullMeasurer : MonoBehaviour
         }
     }
 
-    void OnGrabAdded(GrabInteractor interactor) => m_GrabInteractor = interactor;
+    void OnGrabAdded(GrabInteractor interactor)
+    {
+        m_GrabInteractor = interactor;
+        if (m_Notch != null)
+        {
+            m_Notch.EnsureNocked();
+        }
+    }
+
     void OnGrabRemoved(GrabInteractor interactor) => Release();
 
-    void OnHandGrabAdded(HandGrabInteractor interactor) => m_HandGrabInteractor = interactor;
+    void OnHandGrabAdded(HandGrabInteractor interactor)
+    {
+        m_HandGrabInteractor = interactor;
+        if (m_Notch != null)
+        {
+            m_Notch.EnsureNocked();
+        }
+    }
+
     void OnHandGrabRemoved(HandGrabInteractor interactor) => Release();
 
     void Update()
@@ -118,7 +157,7 @@ public class BowPullMeasurer : MonoBehaviour
 
         if (m_StringMiddle != null)
         {
-            m_StringMiddle.position = Vector3.Lerp(m_RestPosition, m_End.position, PullAmount);
+            m_StringMiddle.position = Vector3.Lerp(RestWorldPosition(), m_End.position, PullAmount);
         }
 
         if (!m_PullAudioPlayed && PullAmount > m_PullAudioThreshold)
@@ -147,7 +186,7 @@ public class BowPullMeasurer : MonoBehaviour
 
         if (m_StringMiddle != null)
         {
-            m_StringMiddle.position = m_RestPosition;
+            m_StringMiddle.position = RestWorldPosition();
         }
     }
 
@@ -159,17 +198,12 @@ public class BowPullMeasurer : MonoBehaviour
         m_HandGrabInteractor = null;
 
         Arrow arrow = m_Notch != null ? m_Notch.NockedArrow : null;
-        if (arrow != null)
+        if (arrow != null && pullAmount > m_ReleaseThreshold)
         {
-            if (pullAmount > m_ReleaseThreshold)
-            {
-                arrow.Launch(pullAmount);
-            }
-            else
-            {
-                arrow.Unnock();
-            }
-
+            // Only a real draw fires the arrow. A weak release simply lets the
+            // string snap back, keeping the arrow nocked so it never drops into
+            // the world and accumulates.
+            arrow.Launch(pullAmount);
             m_Notch.ClearNocked();
         }
 
@@ -178,7 +212,7 @@ public class BowPullMeasurer : MonoBehaviour
 
     float CalculatePull(Vector3 pullPosition)
     {
-        Vector3 pullDirection = pullPosition - m_RestPosition;
+        Vector3 pullDirection = pullPosition - RestWorldPosition();
         Vector3 targetDirection = m_End.position - m_Start.position;
 
         float maxLength = targetDirection.magnitude;

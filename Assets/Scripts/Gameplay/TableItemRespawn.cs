@@ -3,10 +3,12 @@ using UnityEngine;
 
 /// <summary>
 /// Keeps a table prop available to the player. When the prop leaves its home
-/// spot (knocked to the floor, carried away, or the table itself is moved), a
-/// fresh copy reappears at the home transform right away, while the stray
-/// object is removed <see cref="m_CleanupDelay"/> seconds later. Picking the
-/// stray back up cancels the cleanup and removes the fresh copy.
+/// spot (knocked to the floor or carried away) and is left untouched for
+/// <see cref="m_CleanupDelay"/> seconds, it is returned to its home transform
+/// instead of spawning a copy. Returning the existing object (rather than
+/// instantiating a replacement) guarantees only a single instance of each prop
+/// can ever exist, which fixes the runaway duplication that used to happen as
+/// soon as a prop touched the floor.
 /// </summary>
 [DisallowMultipleComponent]
 public class TableItemRespawn : MonoBehaviour
@@ -20,7 +22,7 @@ public class TableItemRespawn : MonoBehaviour
     float m_HomeRadius = 1f;
 
     [SerializeField]
-    [Tooltip("Seconds the stray object lingers before it is removed.")]
+    [Tooltip("Seconds the object may stay away from home before it is returned.")]
     float m_CleanupDelay = 10f;
 
     Rigidbody m_Rigidbody;
@@ -29,12 +31,7 @@ public class TableItemRespawn : MonoBehaviour
     bool m_Ready;
     Vector3 m_HomePosition;
     Quaternion m_HomeRotation;
-    bool m_HomeKinematic;
-    bool m_HomeGravity;
-
-    bool m_Triggered;
-    float m_CleanupTimer;
-    GameObject m_Replacement;
+    float m_StrayTimer;
 
     void Awake()
     {
@@ -46,13 +43,6 @@ public class TableItemRespawn : MonoBehaviour
     {
         m_HomePosition = transform.position;
         m_HomeRotation = transform.rotation;
-
-        if (m_Rigidbody != null)
-        {
-            m_HomeKinematic = m_Rigidbody.isKinematic;
-            m_HomeGravity = m_Rigidbody.useGravity;
-        }
-
         m_Ready = true;
     }
 
@@ -75,55 +65,35 @@ public class TableItemRespawn : MonoBehaviour
         if (!m_Ready)
             return;
 
-        if (BeingHeld())
+        if (BeingHeld() || !IsStray())
         {
-            // The player picked the stray back up: cancel the respawn.
-            if (m_Replacement != null)
-            {
-                Destroy(m_Replacement);
-                m_Replacement = null;
-            }
-
-            m_Triggered = false;
-            m_CleanupTimer = 0f;
+            m_StrayTimer = 0f;
             return;
         }
 
-        if (!m_Triggered)
+        m_StrayTimer += Time.deltaTime;
+        if (m_StrayTimer >= m_CleanupDelay)
         {
-            if (IsStray())
-            {
-                m_Triggered = true;
-                m_CleanupTimer = 0f;
-                m_Replacement = Respawn();
-            }
-
-            return;
+            ReturnHome();
         }
-
-        m_CleanupTimer += Time.deltaTime;
-        if (m_CleanupTimer >= m_CleanupDelay)
-            Destroy(gameObject);
     }
 
-    GameObject Respawn()
+    void ReturnHome()
     {
-        GameObject replacement = Instantiate(gameObject, transform.parent);
-        replacement.name = gameObject.name;
+        m_StrayTimer = 0f;
 
-        Transform t = replacement.transform;
-        t.SetPositionAndRotation(m_HomePosition, m_HomeRotation);
-        t.localScale = transform.localScale;
-
-        Rigidbody body = replacement.GetComponent<Rigidbody>();
-        if (body != null)
+        if (m_Rigidbody != null && !m_Rigidbody.isKinematic)
         {
-            body.linearVelocity = Vector3.zero;
-            body.angularVelocity = Vector3.zero;
-            body.isKinematic = m_HomeKinematic;
-            body.useGravity = m_HomeGravity;
+            m_Rigidbody.linearVelocity = Vector3.zero;
+            m_Rigidbody.angularVelocity = Vector3.zero;
         }
 
-        return replacement;
+        transform.SetPositionAndRotation(m_HomePosition, m_HomeRotation);
+
+        if (m_Rigidbody != null && !m_Rigidbody.isKinematic)
+        {
+            m_Rigidbody.linearVelocity = Vector3.zero;
+            m_Rigidbody.angularVelocity = Vector3.zero;
+        }
     }
 }

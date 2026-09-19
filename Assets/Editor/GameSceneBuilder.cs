@@ -1138,9 +1138,38 @@ public static class GameSceneBuilder
         AddFittedCollider(axe);
         AddThrowable(axe, 1.2f, s_AxeProfile, despawn: true);
 
+        // The handle sits at the -Z end of the imported model; force the axe to
+        // always be held there instead of by the blade.
+        AddGripHandle(axe, new Vector3(0f, 0f, -0.12f));
+
         var prefab = PrefabUtility.SaveAsPrefabAsset(axe, $"{k_PrefabFolder}/Axe.prefab");
         Object.DestroyImmediate(axe);
         return prefab;
+    }
+
+    /// <summary>
+    /// Adds a grip transform and makes every grab interactable on
+    /// <paramref name="go"/> use it, so the object is always held by the grip
+    /// instead of wherever the hand happened to touch.
+    /// </summary>
+    static void AddGripHandle(GameObject go, Vector3 localPosition)
+    {
+        var handle = new GameObject("Grip");
+        handle.transform.SetParent(go.transform, false);
+        handle.transform.localPosition = localPosition;
+
+        foreach (var grab in go.GetComponentsInChildren<GrabInteractable>(true))
+        {
+            grab.InjectOptionalGrabSource(handle.transform);
+        }
+
+        foreach (var handGrab in go.GetComponentsInChildren<HandGrabInteractable>(true))
+        {
+            var pose = handle.AddComponent<HandGrabPose>();
+            pose.InjectAllHandGrabPose(handGrab.transform);
+            pose.InjectOptionalHandPose(null);
+            handGrab.InjectOptionalHandGrabPoses(new List<HandGrabPose> { pose });
+        }
     }
 
     /// <summary>

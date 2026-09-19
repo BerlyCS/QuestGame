@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using Oculus.Interaction;
 using Oculus.Interaction.Editor.QuickActions;
+using Oculus.Interaction.HandGrab;
 using UnityEditor;
 using UnityEngine;
 
@@ -36,7 +38,7 @@ public static class BowPrefabBuilder
         EnsureAssetFolder(k_PrefabFolder);
 
         GameObject arrowPrefab = BuildArrowPrefab();
-        BuildBowPrefab();
+        BuildBowPrefab(arrowPrefab);
         BuildQuiverPrefab(arrowPrefab);
 
         AssetDatabase.SaveAssets();
@@ -69,7 +71,7 @@ public static class BowPrefabBuilder
 
         // The original prefab flattens the visual by -45 degrees and then -90
         // degrees again inside "Mesh"; reproducing that keeps the model upright.
-        GameObject model = CreateEmpty("Model", root.transform, Vector3.zero, Quaternion.Euler(-45f, 0f, 0f), Vector3.one);
+        GameObject model = CreateEmpty("Model", root.transform, Vector3.zero, Quaternion.identity, Vector3.one);
         GameObject mesh = CreateEmpty("Mesh", model.transform, Vector3.zero, Quaternion.Euler(-90f, 0f, 0f), Vector3.one);
 
         InstantiateModel(k_ArrowShaftModelPath, mesh.transform,
@@ -102,7 +104,7 @@ public static class BowPrefabBuilder
     // ------------------------------------------------------------------
     // Bow
     // ------------------------------------------------------------------
-    static void BuildBowPrefab()
+    static void BuildBowPrefab(GameObject arrowPrefab)
     {
         GameObject root = new GameObject("Bow");
         root.layer = 2;
@@ -173,6 +175,11 @@ public static class BowPrefabBuilder
 
         BowNotch notch = notchObject.AddComponent<BowNotch>();
         notch.InjectReferences(bow, stringMiddle);
+        notch.InjectArrowPrefab(arrowPrefab);
+
+        // Force the bow to be held by its grip (riser) instead of being
+        // grabbed from an arbitrary point along the limbs.
+        SetGrabHandle(root, new Vector3(0f, 0f, -0.05f));
 
         BowPullMeasurer measurer = drawGrip.AddComponent<BowPullMeasurer>();
         measurer.InjectReferences(drawStart, drawEnd, stringMiddle, notch, pullAudio);
@@ -229,6 +236,37 @@ public static class BowPrefabBuilder
         go.transform.localRotation = localRotation;
         go.transform.localScale = localScale;
         return go;
+    }
+
+    /// <summary>
+    /// Adds a grip transform and makes every grab interactable owned by
+    /// <paramref name="root"/> (not its nested props) use it, so the object is
+    /// always held by the grip instead of wherever the hand happened to touch.
+    /// </summary>
+    static void SetGrabHandle(GameObject root, Vector3 handleLocalPosition)
+    {
+        Transform handle = CreateEmpty("Grip", root.transform, handleLocalPosition, Quaternion.identity, Vector3.one).transform;
+
+        foreach (GrabInteractable grab in root.GetComponentsInChildren<GrabInteractable>(true))
+        {
+            if (grab.transform.parent == root.transform)
+            {
+                grab.InjectOptionalGrabSource(handle);
+            }
+        }
+
+        foreach (HandGrabInteractable handGrab in root.GetComponentsInChildren<HandGrabInteractable>(true))
+        {
+            if (handGrab.transform.parent != root.transform)
+            {
+                continue;
+            }
+
+            HandGrabPose pose = handle.gameObject.AddComponent<HandGrabPose>();
+            pose.InjectAllHandGrabPose(handGrab.transform);
+            pose.InjectOptionalHandPose(null);
+            handGrab.InjectOptionalHandGrabPoses(new List<HandGrabPose> { pose });
+        }
     }
 
     static void InstantiateModel(string path, Transform parent, Vector3 localPosition, Quaternion localRotation, Vector3 localScale, Material material)
