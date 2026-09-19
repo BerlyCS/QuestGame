@@ -27,6 +27,13 @@ public static class BowPrefabBuilder
     const string k_BowMaterialPath = "Assets/Materials/Bow/Bow.mat";
     const string k_ArrowMaterialPath = "Assets/Materials/Bow/Arrow.mat";
 
+    // Scale applied to the whole bow and arrow so they sit comfortably in the
+    // hand; the meshes are authored quite large.
+    const float k_BowScale = 0.7f;
+
+    // Both the bow and the arrow live on the Ignore Raycast layer.
+    const int k_IgnoreRaycastLayer = 2;
+
     const string k_BowTwangClipPath = "Assets/Audio/Bow/OOT_Bow_Twang.wav";
     const string k_BowPullClipPath = "Assets/Audio/Bow/OOT_Bow_Pull.wav";
     const string k_ArrowHitClipPath = "Assets/Audio/Bow/OOT_Arrow_Hit_Cut.wav";
@@ -114,9 +121,14 @@ public static class BowPrefabBuilder
 
         ArrowCaster caster = root.AddComponent<ArrowCaster>();
         caster.InjectTip(tip);
+        // Ignore Raycast holds the arrow and the bow, so the flight sweep must
+        // not treat them as targets or the arrow sticks to its own bow.
+        caster.InjectLayerMask(~(1 << k_IgnoreRaycastLayer));
 
         Arrow arrow = root.AddComponent<Arrow>();
         arrow.InjectReferences(caster, tip, hitAudio, shotAudio);
+
+        root.transform.localScale = Vector3.one * k_BowScale;
 
         return SaveAsPrefab(root, k_ArrowPrefabPath);
     }
@@ -199,10 +211,12 @@ public static class BowPrefabBuilder
 
         // Force the bow to be held by its grip (riser) instead of being
         // grabbed from an arbitrary point along the limbs.
-        SetGrabHandle(root, new Vector3(0f, 0f, -0.05f));
+        SetGrabHandle(root, new Vector3(-0.03f, 0f, -0.07f), Quaternion.Euler(0f, 0f, 90f));
 
         BowPullMeasurer measurer = drawGrip.AddComponent<BowPullMeasurer>();
         measurer.InjectReferences(drawStart, drawEnd, stringMiddle, notch, pullAudio);
+
+        root.transform.localScale = Vector3.one * k_BowScale;
 
         SaveAsPrefab(root, k_BowPrefabPath);
     }
@@ -263,9 +277,9 @@ public static class BowPrefabBuilder
     /// <paramref name="root"/> (not its nested props) use it, so the object is
     /// always held by the grip instead of wherever the hand happened to touch.
     /// </summary>
-    static void SetGrabHandle(GameObject root, Vector3 handleLocalPosition)
+    static void SetGrabHandle(GameObject root, Vector3 handleLocalPosition, Quaternion handleLocalRotation)
     {
-        Transform handle = CreateEmpty("Grip", root.transform, handleLocalPosition, Quaternion.identity, Vector3.one).transform;
+        Transform handle = CreateEmpty("Grip", root.transform, handleLocalPosition, handleLocalRotation, Vector3.one).transform;
 
         foreach (GrabInteractable grab in root.GetComponentsInChildren<GrabInteractable>(true))
         {

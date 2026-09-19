@@ -98,7 +98,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.7, y: 0.7, z: 0.7}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 2453667014396228173}
@@ -387,7 +387,7 @@ MonoBehaviour:
   m_Tip: {fileID: 6088285658883992386}
   m_LayerMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 4294967291
 --- !u!114 &82420593724554470
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -404,6 +404,7 @@ MonoBehaviour:
   m_MinLaunchSpeed: 5
   m_HitAudioSource: {fileID: 8269350062628492412}
   m_ShotAudioSource: {fileID: 8180075407439006491}
+  m_DespawnDelay: 20
   m_Caster: {fileID: 5321146725009973171}
   m_Tip: {fileID: 6088285658883992386}
 --- !u!1 &7772435903154354052

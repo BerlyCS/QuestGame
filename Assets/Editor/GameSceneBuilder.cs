@@ -1138,9 +1138,8 @@ public static class GameSceneBuilder
         AddFittedCollider(axe);
         AddThrowable(axe, 1.2f, s_AxeProfile, despawn: true);
 
-        // The handle sits at the -Z end of the imported model; force the axe to
-        // always be held there instead of by the blade.
-        AddGripHandle(axe, new Vector3(0f, 0f, -0.12f));
+        // Force the axe to always be held by its grip instead of by the blade.
+        AddGripHandle(axe, new Vector3(-0.04f, -0.09f, -0.1f), Quaternion.Euler(-120f, -90f, 0f));
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(axe, $"{k_PrefabFolder}/Axe.prefab");
         Object.DestroyImmediate(axe);
@@ -1152,11 +1151,12 @@ public static class GameSceneBuilder
     /// <paramref name="go"/> use it, so the object is always held by the grip
     /// instead of wherever the hand happened to touch.
     /// </summary>
-    static void AddGripHandle(GameObject go, Vector3 localPosition)
+    static void AddGripHandle(GameObject go, Vector3 localPosition, Quaternion localRotation)
     {
         var handle = new GameObject("Grip");
         handle.transform.SetParent(go.transform, false);
         handle.transform.localPosition = localPosition;
+        handle.transform.localRotation = localRotation;
 
         foreach (var grab in go.GetComponentsInChildren<GrabInteractable>(true))
         {

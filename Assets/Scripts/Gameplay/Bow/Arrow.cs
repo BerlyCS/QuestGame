@@ -29,6 +29,11 @@ public class Arrow : MonoBehaviour
     [SerializeField] AudioSource m_HitAudioSource;
     [SerializeField] AudioSource m_ShotAudioSource;
 
+    [Header("Cleanup")]
+    [SerializeField]
+    [Tooltip("Seconds after being fired before the arrow despawns.")]
+    float m_DespawnDelay = 20f;
+
     [Header("References")]
     [SerializeField]
     [Tooltip("Sweep caster used while the arrow flies. Auto-found when empty.")]
@@ -42,6 +47,7 @@ public class Arrow : MonoBehaviour
     Grabbable m_Grabbable;
     GrabInteractable m_GrabInteractable;
     HandGrabInteractable m_HandGrabInteractable;
+    Collider[] m_Colliders;
 
     GrabInteractor m_GrabInteractor;
     HandGrabInteractor m_HandGrabInteractor;
@@ -50,6 +56,7 @@ public class Arrow : MonoBehaviour
     bool m_Stuck;
     bool m_Nocked;
     Coroutine m_LaunchRoutine;
+    Coroutine m_DespawnRoutine;
 
     public bool IsLaunched => m_Launched;
     public bool IsStuck => m_Stuck;
@@ -64,6 +71,7 @@ public class Arrow : MonoBehaviour
         m_Grabbable = GetComponentInChildren<Grabbable>(true);
         m_GrabInteractable = GetComponentInChildren<GrabInteractable>(true);
         m_HandGrabInteractable = GetComponentInChildren<HandGrabInteractable>(true);
+        m_Colliders = GetComponentsInChildren<Collider>(true);
 
         if (m_Caster == null)
         {
@@ -149,13 +157,17 @@ public class Arrow : MonoBehaviour
 
         m_Nocked = true;
         SetGrabEnabled(false);
+        SetCollidersEnabled(true);
+        CancelDespawn();
 
         m_Rigidbody.linearVelocity = Vector3.zero;
         m_Rigidbody.angularVelocity = Vector3.zero;
         m_Rigidbody.isKinematic = true;
         m_Rigidbody.useGravity = false;
 
-        transform.SetParent(nockPoint, false);
+        // worldPositionStays keeps the arrow's own size even though the bow is
+        // scaled, then the local pose is snapped onto the string.
+        transform.SetParent(nockPoint, true);
         transform.localPosition = Vector3.zero;
         transform.localRotation = Quaternion.identity;
 
@@ -179,6 +191,7 @@ public class Arrow : MonoBehaviour
         transform.SetParent(null, true);
         m_Rigidbody.isKinematic = false;
         m_Rigidbody.useGravity = true;
+        SetCollidersEnabled(true);
         SetGrabEnabled(true);
     }
 
@@ -204,6 +217,10 @@ public class Arrow : MonoBehaviour
         m_Launched = true;
         SetGrabEnabled(false);
 
+        // The flight is resolved by the ArrowCaster line-cast, so the arrow's
+        // own collider is disabled to stop it from catching on the bow frame.
+        SetCollidersEnabled(false);
+
         m_Rigidbody.isKinematic = false;
         m_Rigidbody.useGravity = true;
         m_Rigidbody.linearVelocity = Vector3.zero;
@@ -218,6 +235,9 @@ public class Arrow : MonoBehaviour
         m_Rigidbody.AddForce(NoseDirection() * speed, ForceMode.VelocityChange);
 
         m_LaunchRoutine = StartCoroutine(LaunchRoutine());
+
+        CancelDespawn();
+        m_DespawnRoutine = StartCoroutine(DespawnRoutine());
     }
 
     Vector3 NoseDirection()
@@ -272,6 +292,7 @@ public class Arrow : MonoBehaviour
             hittable.Hit(this);
         }
 
+        SetCollidersEnabled(true);
         SetGrabEnabled(true);
     }
 
@@ -304,9 +325,12 @@ public class Arrow : MonoBehaviour
             m_LaunchRoutine = null;
         }
 
+        CancelDespawn();
+
         transform.SetParent(null, true);
         m_Rigidbody.isKinematic = false;
         m_Rigidbody.useGravity = true;
+        SetCollidersEnabled(true);
     }
 
     void ReleaseHolders()
@@ -335,6 +359,38 @@ public class Arrow : MonoBehaviour
         {
             m_HandGrabInteractable.enabled = enabled;
         }
+    }
+
+    void SetCollidersEnabled(bool enabled)
+    {
+        if (m_Colliders == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < m_Colliders.Length; i++)
+        {
+            if (m_Colliders[i] != null)
+            {
+                m_Colliders[i].enabled = enabled;
+            }
+        }
+    }
+
+    void CancelDespawn()
+    {
+        if (m_DespawnRoutine != null)
+        {
+            StopCoroutine(m_DespawnRoutine);
+            m_DespawnRoutine = null;
+        }
+    }
+
+    IEnumerator DespawnRoutine()
+    {
+        yield return new WaitForSeconds(m_DespawnDelay);
+        m_DespawnRoutine = null;
+        Destroy(gameObject);
     }
 
     public void InjectReferences(
