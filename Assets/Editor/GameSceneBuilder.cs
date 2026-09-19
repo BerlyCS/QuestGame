@@ -73,10 +73,10 @@ public static class GameSceneBuilder
         var campfire = BuildCampfire(environment);
         var logPile = BuildLogPile(environment);
         BuildTutorialLog(campfire.transform);
-        var tent = BuildTent(environment);
-        var campProps = BuildCampProps(environment);
-        var treasure = BuildTreasure(environment);
-        var weaponRack = BuildWeaponRack(environment);
+        BuildTent(environment);
+        BuildCampProps(environment);
+        BuildTreasure(environment);
+        BuildWeaponRack(environment);
         BuildInteractables(environment);
         BuildEnemyBanisher(environment);
         BuildShield(interactionRig);
@@ -89,7 +89,7 @@ public static class GameSceneBuilder
         Wire(night, "m_Campfire", campfire);
         Wire(night, "m_MoonLight", moonLight);
 
-        BuildCampReveal(systems, campfire, tent, campProps, treasure, weaponRack);
+        BuildCampReveal(systems, campfire);
 
         BuildSkeletonSpawner(systems, rig, campfire);
         BuildLogSpawner(systems, logPile);

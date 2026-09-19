@@ -182767,11 +182767,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CampRevealController
   m_Campfire: {fileID: 236847296}
-  m_ObjectsToReveal:
-  - {fileID: 0}
-  - {fileID: 2139699788}
-  - {fileID: 0}
-  - {fileID: 1208033338}
+  m_ObjectsToReveal: []
 --- !u!114 &2069872530
 MonoBehaviour:
   m_ObjectHideFlags: 0
