@@ -234,6 +234,19 @@ public class Skeleton : MonoBehaviour
             Die();
     }
 
+    /// <summary>
+    /// Removed from the world instantly by the banishing weapon (see
+    /// <see cref="EnemyBanisher"/>), bypassing the hit-count path. Fires
+    /// OnDied like a normal kill so spawner bookkeeping stays consistent.
+    /// </summary>
+    public void Banish()
+    {
+        if (!IsAlive)
+            return;
+
+        Die();
+    }
+
     void Die()
     {
         m_Hits = 0;

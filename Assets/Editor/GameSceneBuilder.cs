@@ -1137,6 +1137,7 @@ public static class GameSceneBuilder
 
         AddFittedCollider(axe);
         AddThrowable(axe, 1.2f, s_AxeProfile, despawn: true);
+        axe.AddComponent<EnemyBanisher>();
 
         // Force the axe to always be held by its grip instead of by the blade.
         AddGripHandle(axe, new Vector3(-0.04f, -0.09f, -0.1f), Quaternion.Euler(-120f, -90f, 0f));

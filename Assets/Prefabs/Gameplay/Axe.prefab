@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 484434373091055360}
   - component: {fileID: 8284020572074866236}
   - component: {fileID: 1767900817939472555}
+  - component: {fileID: 1153055199938763642}
   m_Layer: 0
   m_Name: Axe
   m_TagString: Untagged
@@ -391,3 +392,21 @@ MonoBehaviour:
   _ghostProvider: {fileID: 0}
   _handGhostProvider: {fileID: 0}
   _ovrOffsetMode: 0
+--- !u!114 &1153055199938763642
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1212331566851920853}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d1606210b530a440bbc92ae23819097, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyBanisher
+  m_Radius: 0.4
+  m_EnemyLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_BanishHapticAmplitude: 0.55
+  m_BanishHapticDuration: 0.09
