@@ -28,7 +28,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] PlayerHealth m_PlayerHealth;
 
     [Header("Victory")]
-    [SerializeField] float m_SurvivalDuration = 180f;
+    [SerializeField] float m_SurvivalDuration = 270f;
     [SerializeField] float m_VictoryLitDuration = 10f;
 
     [Header("Defeat")]

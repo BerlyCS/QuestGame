@@ -34,7 +34,10 @@ public class ArrowCaster : MonoBehaviour
             m_LastPosition = currentPosition;
         }
 
-        bool collided = Physics.Linecast(m_LastPosition, currentPosition, out hit, m_LayerMask);
+        // QueryTriggerInteraction.Ignore so the arrow flies through gameplay
+        // trigger volumes (e.g. the campfire's invisible Fuel Trigger dome) and
+        // only stops on real, solid geometry.
+        bool collided = Physics.Linecast(m_LastPosition, currentPosition, out hit, m_LayerMask, QueryTriggerInteraction.Ignore);
         m_LastPosition = collided ? m_LastPosition : currentPosition;
 
         return collided;

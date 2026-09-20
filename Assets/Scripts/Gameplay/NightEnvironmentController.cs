@@ -59,7 +59,7 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] Color m_SunColorDawn = new Color(1f, 0.6f, 0.32f);
     [SerializeField] float m_SunIntensityDawn = 1.1f;
     [SerializeField] float m_SkyExposureNight = 0.12f;
-    [SerializeField] float m_SkyExposureDawn = 1.25f;
+    [SerializeField] float m_SkyExposureDawn = 0.5f;
     [Tooltip("Six-sided skybox tint at the start of the night (matches the pack's neutral 0.5 grey).")]
     [SerializeField] Color m_SkyTintNight = new Color(0.5f, 0.5f, 0.5f);
     [Tooltip("Six-sided skybox tint at dawn, warming the night's cool sky toward the rising sun.")]
@@ -79,6 +79,15 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] Color m_MoonColorFull = new Color(0.9f, 0.92f, 1f);
     [SerializeField] Color m_MoonEmissionNew = new Color(0f, 0f, 0f);
     [SerializeField] Color m_MoonEmissionFull = new Color(1.5f, 1.6f, 2f);
+    [Tooltip("Blood red the moon fills out to before it starts whitening.")]
+    [SerializeField] Color m_MoonColorRed = new Color(0.85f, 0.07f, 0.05f);
+    [SerializeField] Color m_MoonEmissionRed = new Color(2.6f, 0.2f, 0.1f);
+    [Tooltip("Night progress (0-1) at which the moon is fully red.")]
+    [SerializeField] float m_MoonRedAt = 0.4f;
+    [Tooltip("Night progress (0-1) at which the red has slowly whitened into the full moon.")]
+    [SerializeField] float m_MoonWhiteAt = 0.82f;
+    [Tooltip("Night progress (0-1) at which the moon starts to hide; gone just before the sun shows.")]
+    [SerializeField] float m_MoonHideAt = 0.9f;
 
     [Header("Rising sun")]
     [SerializeField] bool m_BuildSun = true;
@@ -90,6 +99,22 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] float m_SunDiameter = 34f;
     [Tooltip("Dawn progress (0-1) at which the sun starts to climb into view.")]
     [SerializeField] float m_SunAppearAt = 0.45f;
+    [Tooltip("Icosphere subdivisions for the sun sphere. 3 (~1.3k tris) keeps the " +
+        "silhouette round without making the mesh heavy.")]
+    [SerializeField, Range(0, 4)] int m_SunSubdivisions = 3;
+
+    [Header("Dawn sky dome")]
+    [Tooltip("Builds a large unlit dome that fades in over the night sky, turning it warm.")]
+    [SerializeField] bool m_BuildDawnSky = true;
+    [Tooltip("Colour the dawn sky settles to at the horizon (the sunrise band).")]
+    [SerializeField] Color m_DawnSkyHorizon = new Color(1f, 0.5f, 0.3f);
+    [Tooltip("Colour the dawn sky settles to overhead.")]
+    [SerializeField] Color m_DawnSkyZenith = new Color(0.22f, 0.34f, 0.62f);
+    [SerializeField] Color m_DawnSkyGlow = new Color(1f, 0.75f, 0.45f);
+    [SerializeField] float m_DawnSkyGlowStrength = 1.1f;
+    [Tooltip("Radius of the dawn sky dome; must sit inside the camera far clip and " +
+        "beyond the sun/moon so they stay visible in front of it.")]
+    [SerializeField] float m_DawnSkyRadius = 800f;
 
     [Header("Dawn birds (placeholder)")]
     [Tooltip("Fades in as the sky brightens. Left empty, the generated birdsong is used.")]
@@ -104,6 +129,8 @@ public class NightEnvironmentController : MonoBehaviour
     Transform m_Sun;
     Renderer m_SunRenderer;
     Material m_SunMaterialInstance;
+    Transform m_DawnSky;
+    Material m_DawnSkyMaterial;
     AudioSource m_BirdsSource;
 
     /// <summary>
@@ -122,6 +149,7 @@ public class NightEnvironmentController : MonoBehaviour
     {
         CacheMoon();
         BuildSun();
+        BuildDawnSky();
         BuildBirds();
         Apply(1f);
     }
@@ -136,12 +164,14 @@ public class NightEnvironmentController : MonoBehaviour
     {
         if (m_SunMaterialInstance != null)
             Destroy(m_SunMaterialInstance);
+        if (m_DawnSkyMaterial != null)
+            Destroy(m_DawnSkyMaterial);
     }
 
     void Apply(float normalized)
     {
-        float n = m_GameManager != null ? m_GameManager.SurvivalNormalized : 0f;
-        Apply(normalized, DawnFromSurvival(n));
+        float survival = m_GameManager != null ? m_GameManager.SurvivalNormalized : 0f;
+        Apply(normalized, DawnFromSurvival(survival), survival);
     }
 
     /// <summary>
@@ -163,12 +193,14 @@ public class NightEnvironmentController : MonoBehaviour
     /// <summary>
     /// <paramref name="normalized"/> is the fuel-driven light level (also forced by
     /// GameManager for the victory/defeat fades); <paramref name="dawn"/> is the 0-1
-    /// progress of the night ending.
+    /// progress of the night ending; <paramref name="survival"/> is the raw 0-1
+    /// survival clock, which the moon phase follows across the whole night.
     /// </summary>
-    public void Apply(float normalized, float dawn)
+    public void Apply(float normalized, float dawn, float survival)
     {
         normalized = Mathf.Clamp01(normalized);
         dawn = Mathf.Clamp01(dawn);
+        survival = Mathf.Clamp01(survival);
 
         // The defeat fade (forced toward 0) must still take the sky to black.
         float blackout = m_ForcedNormalized.HasValue ? Mathf.Clamp01(m_ForcedNormalized.Value) : 1f;
@@ -192,8 +224,9 @@ public class NightEnvironmentController : MonoBehaviour
             m_MoonLight.transform.rotation = Quaternion.Euler(Mathf.Lerp(m_SunPitchNight, m_SunPitchDawn, dawn), m_SunYaw, 0f);
         }
 
-        ApplyMoonPhase(dawn, blackout);
+        ApplyMoonPhase(survival, blackout);
         ApplySun(dawn, blackout);
+        ApplyDawnSky(dawn, blackout);
         ApplyBirds(dawn);
 
         if (m_SkyMaterial != null)
@@ -234,22 +267,37 @@ public class NightEnvironmentController : MonoBehaviour
         }
     }
 
-    void ApplyMoonPhase(float dawn, float blackout)
+    void ApplyMoonPhase(float survival, float blackout)
     {
         if (m_MoonMaterial == null)
             return;
 
-        // New moon at midnight, full moon by the time the sky breaks: the only
+        // New moon as the night starts, fills out to a blood red disc, then
+        // slowly whitens into the full moon, and finally hides just before the
+        // sun comes up. Follows the whole survival clock (not just the compressed
+        // dawn curve) so it reads as a smooth progress indicator, and is the only
         // progress readout the game has (see the cero-UI rule).
-        Color color = Color.Lerp(m_MoonColorNew, m_MoonColorFull, dawn);
-        Color emission = Color.Lerp(m_MoonEmissionNew, m_MoonEmissionFull, dawn);
+        float fill = Mathf.InverseLerp(0f, m_MoonRedAt, survival);
+        float whiten = Mathf.InverseLerp(m_MoonRedAt, m_MoonWhiteAt, survival);
+
+        Color color = Color.Lerp(m_MoonColorNew, m_MoonColorRed, fill);
+        Color emission = Color.Lerp(m_MoonEmissionNew, m_MoonEmissionRed, fill);
+        color = Color.Lerp(color, m_MoonColorFull, whiten);
+        emission = Color.Lerp(emission, m_MoonEmissionFull, whiten);
+
+        float hide = 1f - Mathf.InverseLerp(m_MoonHideAt, 1f, survival);
+        color *= hide;
+        emission *= hide * blackout;
 
         if (m_MoonMaterial.HasProperty("_BaseColor"))
             m_MoonMaterial.SetColor("_BaseColor", color);
         if (m_MoonMaterial.HasProperty("_Color"))
             m_MoonMaterial.SetColor("_Color", color);
         if (m_MoonMaterial.HasProperty("_EmissionColor"))
-            m_MoonMaterial.SetColor("_EmissionColor", emission * blackout);
+            m_MoonMaterial.SetColor("_EmissionColor", emission);
+
+        if (m_MoonRenderer != null)
+            m_MoonRenderer.enabled = hide > 0.01f && blackout > 0.01f;
     }
 
     void BuildSun()
@@ -261,7 +309,7 @@ public class NightEnvironmentController : MonoBehaviour
         go.transform.SetParent(transform, false);
 
         var filter = go.AddComponent<MeshFilter>();
-        filter.sharedMesh = BuildIcoSphere(1);
+        filter.sharedMesh = BuildIcoSphere(m_SunSubdivisions);
 
         var renderer = go.AddComponent<MeshRenderer>();
         renderer.shadowCastingMode = ShadowCastingMode.Off;
@@ -321,6 +369,58 @@ public class NightEnvironmentController : MonoBehaviour
                     material.SetFloat("_Boost", Mathf.Lerp(0.4f, 1.6f, appear) * blackout);
             }
         }
+    }
+
+    void BuildDawnSky()
+    {
+        if (!m_BuildDawnSky || m_DawnSky != null)
+            return;
+
+        Shader shader = Shader.Find("Custom/DawnSky");
+        if (shader == null)
+            return;
+
+        m_DawnSkyMaterial = new Material(shader) { name = "M_DawnSky (Runtime)" };
+        m_DawnSkyMaterial.SetColor("_HorizonColor", m_DawnSkyHorizon);
+        m_DawnSkyMaterial.SetColor("_ZenithColor", m_DawnSkyZenith);
+        m_DawnSkyMaterial.SetColor("_SunGlowColor", m_DawnSkyGlow);
+        m_DawnSkyMaterial.SetFloat("_SunGlowStrength", m_DawnSkyGlowStrength);
+        m_DawnSkyMaterial.SetFloat("_Alpha", 0f);
+
+        var go = new GameObject("Dawn Sky");
+        go.transform.SetParent(transform, false);
+
+        var filter = go.AddComponent<MeshFilter>();
+        filter.sharedMesh = BuildIcoSphere(3);
+
+        var renderer = go.AddComponent<MeshRenderer>();
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        renderer.sharedMaterial = m_DawnSkyMaterial;
+
+        go.transform.localScale = Vector3.one * m_DawnSkyRadius;
+        go.SetActive(false);
+        m_DawnSky = go.transform;
+    }
+
+    /// <summary>
+    /// Fades a warm, unlit dome in over the night skybox so the sky itself turns
+    /// to morning instead of only brightening in place. The six-sided night
+    /// textures are essentially pure blue (their red channel is ~0), so tinting
+    /// them can never read as dawn - the dome is what actually warms the sky.
+    /// </summary>
+    void ApplyDawnSky(float dawn, float blackout)
+    {
+        if (m_DawnSkyMaterial == null || m_DawnSky == null)
+            return;
+
+        Vector3 sunDirection = m_MoonLight != null ? -m_MoonLight.transform.forward : Vector3.up;
+        m_DawnSkyMaterial.SetVector("_SunDirection", sunDirection);
+
+        float alpha = Mathf.SmoothStep(0f, 1f, dawn) * blackout;
+        m_DawnSkyMaterial.SetFloat("_Alpha", alpha);
+        m_DawnSky.gameObject.SetActive(alpha > 0.002f);
     }
 
     void BuildBirds()

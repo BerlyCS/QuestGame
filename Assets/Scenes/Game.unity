@@ -37435,7 +37435,7 @@ Transform:
   m_GameObject: {fileID: 519038952}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.25, y: 12.5, z: 75}
+  m_LocalPosition: {x: 55, y: 13, z: 55}
   m_LocalScale: {x: 12, y: 12, z: 12}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -56345,7 +56345,7 @@ MonoBehaviour:
   m_BoneThrowerSpawner: {fileID: 600352573}
   m_HunterSpawner: {fileID: 926656458}
   m_PlayerHealth: {fileID: 1382239415}
-  m_SurvivalDuration: 180
+  m_SurvivalDuration: 270
   m_VictoryLitDuration: 10
   m_DefeatFadeDuration: 1.5
   m_DefeatRestartDelay: 5
@@ -147316,7 +147316,7 @@ MonoBehaviour:
   m_SunColorDawn: {r: 1, g: 0.6, b: 0.32, a: 1}
   m_SunIntensityDawn: 1.1
   m_SkyExposureNight: 0.12
-  m_SkyExposureDawn: 1.25
+  m_SkyExposureDawn: 0.5
   m_SkyTintNight: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   m_SkyTintDawn: {r: 1, g: 0.72, b: 0.5, a: 1}
   m_GroundColorNight: {r: 0.01, g: 0.01, b: 0.02, a: 1}
