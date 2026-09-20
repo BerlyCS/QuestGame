@@ -16453,9 +16453,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 32d258986cd01b8478b1b94637bc88c2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CampfireFuel
-  m_MaxFuel: 1
+  m_MaxFuel: 90
   m_StartingFuel: 55
-  m_BurnRatePerSecond: 0.0033
+  m_BurnRatePerSecond: 0.55
   m_FireLight: {fileID: 1262545453}
   m_MinLightIntensity: 0.3
   m_MaxLightIntensity: 6
@@ -43245,6 +43245,60 @@ Transform:
   - {fileID: 399781906}
   m_Father: {fileID: 1902666587}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &600352572
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 600352574}
+  - component: {fileID: 600352573}
+  m_Layer: 0
+  m_Name: Bone Thrower Spawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &600352573
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 600352572}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5dc739ab93e474a1d955498c6c0ef709, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BoneThrowerSpawner
+  m_BoneThrowerPrefab: {fileID: 4649377922304965832, guid: 1aa642466d40e4408b0afe33c81e92d2, type: 3}
+  m_Target: {fileID: 2048067828}
+  m_Campfire: {fileID: 236847296}
+  m_ActivationFuelNormalized: 0.5
+  m_StartDelay: 20
+  m_SpawnInterval: 25
+  m_SpawnDistance: 10
+  m_SpawnSpreadDegrees: 40
+  m_MaxAlive: 2
+  m_TotalToSpawn: 6
+--- !u!4 &600352574
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 600352572}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2069872531}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &600366172
 GameObject:
   m_ObjectHideFlags: 0
@@ -56131,6 +56185,62 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 759562312}
   m_Mesh: {fileID: 274274213292973071, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
+--- !u!1 &759823764
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 759823766}
+  - component: {fileID: 759823765}
+  m_Layer: 0
+  m_Name: Game Manager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &759823765
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 759823764}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d189cf85eeaf742a4999505137cc88e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameManager
+  m_Campfire: {fileID: 236847296}
+  m_NightEnvironment: {fileID: 2069872530}
+  m_SkeletonSpawner: {fileID: 2087385810}
+  m_BoneThrowerSpawner: {fileID: 600352573}
+  m_HunterSpawner: {fileID: 926656458}
+  m_PlayerHealth: {fileID: 1382239415}
+  m_SurvivalDuration: 180
+  m_VictoryLitDuration: 10
+  m_DefeatFadeDuration: 1.5
+  m_DefeatRestartDelay: 5
+  m_ChestRenderer: {fileID: 0}
+  m_TeethMaterial: {fileID: 2100000, guid: 8f7669bdbe59d411981fa7bb9f96487a, type: 2}
+--- !u!4 &759823766
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 759823764}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2069872531}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &760562685
 GameObject:
   m_ObjectHideFlags: 0
@@ -67081,6 +67191,63 @@ Transform:
   m_Children:
   - {fileID: 1575276440}
   m_Father: {fileID: 781939880}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &926656457
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 926656459}
+  - component: {fileID: 926656458}
+  m_Layer: 0
+  m_Name: Hunter Spawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &926656458
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 926656457}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 419dae75a3e2744c4ac4c8713909bb12, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HunterSpawner
+  m_HunterPrefab: {fileID: 8431022873071226507, guid: d0e14e1ec3e414b7a813774b5622ed96, type: 3}
+  m_Player: {fileID: 1382239415}
+  m_GameManager: {fileID: 759823765}
+  m_StartAtSurvival: 0.2
+  m_SpawnInterval: 14
+  m_MinInterval: 7
+  m_IntervalRampPerSpawn: 1.2
+  m_SpawnDistance: 9
+  m_SpreadDegrees: 50
+  m_BehindChance: 0.7
+  m_MaxAlive: 2
+  m_MaxAliveLate: 3
+  m_LateAtSurvival: 0.6
+--- !u!4 &926656459
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 926656457}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2069872531}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &926741191
 GameObject:
@@ -96924,6 +97091,56 @@ Transform:
   - {fileID: 1496791119}
   m_Father: {fileID: 306452984}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1342112865
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1342112866}
+  - component: {fileID: 1342112867}
+  m_Layer: 0
+  m_Name: Debug Keys
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1342112866
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1342112865}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2069872531}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1342112867
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1342112865}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 39dc716dd084c4931bfe72411cbc38ed, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DebugKeys
+  m_ShortcutsEnabled: 1
+  m_SkeletonSpawner: {fileID: 2087385810}
+  m_BoneThrowerSpawner: {fileID: 600352573}
+  m_HunterSpawner: {fileID: 926656458}
+  m_GameManager: {fileID: 759823765}
+  m_SkipToSeconds: 170
 --- !u!1 &1342280144
 GameObject:
   m_ObjectHideFlags: 0
@@ -99642,8 +99859,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
   m_MaxHealth: 100
-  m_Head: {fileID: 0}
-  m_VignetteMaterial: {fileID: 0}
+  m_Head: {fileID: 2048067828}
+  m_VignetteMaterial: {fileID: 2100000, guid: d4923e3a8e56f40b2b3f26f7ac04fac4, type: 2}
   m_OnDied:
     m_PersistentCalls:
       m_Calls: []
@@ -145326,6 +145543,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1616176781}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!4 &2048067828 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 400002, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+  m_PrefabInstance: {fileID: 1382239407}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &2048115588
 GameObject:
   m_ObjectHideFlags: 0
@@ -146884,7 +147106,7 @@ MonoBehaviour:
   m_UseFog: 1
   m_FogColor: {r: 0.01, g: 0.01, b: 0.02, a: 1}
   m_FogDensity: 0.012
-  m_GameManager: {fileID: 0}
+  m_GameManager: {fileID: 759823765}
   m_SkyMaterial: {fileID: 2100000, guid: 97637a2a763b7f24b8da4e139e4144ca, type: 2}
   m_DawnCurve: 1.25
   m_SunPitchNight: -22
@@ -146918,6 +147140,10 @@ Transform:
   m_Children:
   - {fileID: 2087385809}
   - {fileID: 1327685755}
+  - {fileID: 600352574}
+  - {fileID: 926656459}
+  - {fileID: 759823766}
+  - {fileID: 1342112866}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2070039132

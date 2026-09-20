@@ -24,7 +24,7 @@ public static class WireEnemySystems
     const string k_BoneThrowerPrefabPath = "Assets/Prefabs/Gameplay/BoneThrower.prefab";
     const string k_TeethMaterialPath = "Assets/Materials/Game/M_Teeth.mat";
     const string k_VignetteMaterialPath = "Assets/Materials/Game/M_DamageVignette.mat";
-    const string k_SkyMaterialPath = "Assets/Materials/Game/M_NightSky.mat";
+    const string k_SkyMaterialPath = "Assets/Day-Night Skyboxes/Materials/SkyMidnight.mat";
 
     [MenuItem("Tools/Game/Wire Enemy Systems")]
     public static void Wire()
