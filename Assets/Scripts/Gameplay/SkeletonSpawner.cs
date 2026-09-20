@@ -1,9 +1,10 @@
 using UnityEngine;
 
 /// <summary>
-/// Spawns skeletons in front of and behind the player, in waves that get
-/// slightly faster over time. Keeps a cap on how many are alive at once.
-/// Stays dormant until the player has fed the campfire past
+/// Spawns skeletons on a fixed ring centred on the campfire (not the player's
+/// head), biased toward appearing in front of or behind wherever the player is
+/// looking, in waves that get slightly faster over time. Keeps a cap on how
+/// many are alive at once. Stays dormant until the player has fed the campfire past
 /// <see cref="m_ActivationFuelNormalized"/>, so the opening moments are quiet
 /// and the waves start as a consequence of building up the fire rather than
 /// on a fixed timer from scene load.
@@ -77,6 +78,12 @@ public class SkeletonSpawner : MonoBehaviour
 
     void Spawn()
     {
+        // The ring is centred on the campfire (the thing enemies actually walk to),
+        // not on the player's head: the player barely moves, but the ring must stay
+        // fixed regardless. Direction (front/back bias) still follows where the
+        // player is looking, so enemies still read as "coming from behind".
+        Vector3 origin = m_Campfire != null ? m_Campfire.transform.position : m_Target.position;
+
         Vector3 forward = Vector3.ProjectOnPlane(m_Target.forward, Vector3.up).normalized;
         if (forward.sqrMagnitude < 0.01f)
             forward = Vector3.forward;
@@ -85,13 +92,16 @@ public class SkeletonSpawner : MonoBehaviour
         Vector3 direction = front ? forward : -forward;
         direction = Quaternion.Euler(0f, Random.Range(-m_SpawnSpreadDegrees, m_SpawnSpreadDegrees), 0f) * direction;
 
-        Vector3 position = m_Target.position + direction * m_SpawnDistance;
+        Vector3 position = origin + direction * m_SpawnDistance;
         position.y = 0f;
 
         var skeleton = Instantiate(m_SkeletonPrefab, position, Quaternion.LookRotation(-direction, Vector3.up));
         var component = skeleton.GetComponent<Skeleton>();
         if (component != null)
+        {
+            component.SetCampfire(m_Campfire);
             component.OnDied.AddListener(OnSkeletonDied);
+        }
 
         m_Spawned++;
         m_Alive++;
@@ -100,5 +110,17 @@ public class SkeletonSpawner : MonoBehaviour
     void OnSkeletonDied()
     {
         m_Alive = Mathf.Max(0, m_Alive - 1);
+    }
+
+    /// <summary>
+    /// Force-spawns one Caminante immediately at the fixed ring, bypassing the
+    /// activation gate and wave cooldown. For debug use only (see DebugKeys).
+    /// </summary>
+    public void DebugSpawnNow()
+    {
+        if (m_Target == null || m_SkeletonPrefab == null)
+            return;
+
+        Spawn();
     }
 }

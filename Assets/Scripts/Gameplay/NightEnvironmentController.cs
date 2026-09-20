@@ -2,8 +2,13 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Darkens the world as the campfire dies. The fire is the main light source;
-/// the moon only provides a faint cold rim of light.
+/// Two things drive the world's light. The campfire's fuel darkens it as the
+/// fire dies (the fire is the main light source; the moon only gives a faint
+/// cold rim). And the survival clock (GameManager.SurvivalNormalized) slowly
+/// brings the dawn in across the whole 360 degrees: the procedural sky, the
+/// "sun" light rising from below the horizon, ambient light and fog all warm
+/// up and brighten together, so the player can see the night ending from any
+/// direction.
 /// </summary>
 [DisallowMultipleComponent]
 public class NightEnvironmentController : MonoBehaviour
@@ -33,8 +38,44 @@ public class NightEnvironmentController : MonoBehaviour
 
     [Header("Fog")]
     [SerializeField] bool m_UseFog = true;
-    [SerializeField] Color m_FogColor = new Color(0.01f, 0.01f, 0.02f);
-    [SerializeField] float m_FogDensity = 0.012f;
+    [SerializeField] Color m_FogColor = new Color(0.05f, 0.06f, 0.09f);
+    [SerializeField] float m_FogDensity = 0.035f;
+
+    [Header("Dawn (driven by survival time)")]
+    [SerializeField] GameManager m_GameManager;
+    [Tooltip("Procedural skybox material; its exposure and ground colour are animated. Optional.")]
+    [SerializeField] Material m_SkyMaterial;
+    [Tooltip("pow(survival, curve): above 1 keeps the first minute dim and lets the light gather speed.")]
+    [SerializeField] float m_DawnCurve = 1.25f;
+    [SerializeField] float m_SunPitchNight = -22f;
+    [SerializeField] float m_SunPitchDawn = 12f;
+    [Tooltip("Compass heading the sun rises from: 180 = the +Z horizon the player faces.")]
+    [SerializeField] float m_SunYaw = 180f;
+    [SerializeField] Color m_SunColorNight = new Color(0.55f, 0.62f, 0.9f);
+    [SerializeField] Color m_SunColorDawn = new Color(1f, 0.6f, 0.32f);
+    [SerializeField] float m_SunIntensityDawn = 1.1f;
+    [SerializeField] float m_SkyExposureNight = 0.12f;
+    [SerializeField] float m_SkyExposureDawn = 1.25f;
+    [SerializeField] Color m_GroundColorNight = new Color(0.01f, 0.01f, 0.02f);
+    [SerializeField] Color m_GroundColorDawn = new Color(0.32f, 0.22f, 0.2f);
+    [SerializeField] Color m_DawnAmbient = new Color(0.55f, 0.42f, 0.4f);
+    [SerializeField] float m_DawnAmbientIntensity = 1f;
+    [SerializeField] Color m_DawnFogColor = new Color(0.62f, 0.5f, 0.45f);
+    [SerializeField] float m_DawnFogDensity = 0.018f;
+
+    float? m_ForcedNormalized;
+
+    /// <summary>
+    /// When set, overrides the fuel-driven light level (0-1) every frame instead of
+    /// reading the campfire. Used by GameManager to drive the victory brighten-up and
+    /// the defeat fade-to-black independently of whatever the fire happens to be
+    /// doing. Set back to null to resume normal fuel-driven behaviour.
+    /// </summary>
+    public float? ForcedNormalized
+    {
+        get => m_ForcedNormalized;
+        set => m_ForcedNormalized = value;
+    }
 
     void Awake()
     {
@@ -43,24 +84,52 @@ public class NightEnvironmentController : MonoBehaviour
 
     void Update()
     {
-        float n = m_Campfire != null ? m_Campfire.FuelNormalized : 0f;
+        float n = m_ForcedNormalized ?? (m_Campfire != null ? m_Campfire.FuelNormalized : 0f);
         Apply(n);
     }
 
     void Apply(float normalized)
     {
+        float dawn = m_GameManager != null ? Mathf.Pow(m_GameManager.SurvivalNormalized, m_DawnCurve) : 0f;
+        Apply(normalized, dawn);
+    }
+
+    /// <summary>
+    /// <paramref name="normalized"/> is the fuel-driven light level (also forced by
+    /// GameManager for the victory/defeat fades); <paramref name="dawn"/> is the 0-1
+    /// progress of the night ending.
+    /// </summary>
+    public void Apply(float normalized, float dawn)
+    {
         normalized = Mathf.Clamp01(normalized);
+        dawn = Mathf.Clamp01(dawn);
+
+        // The defeat fade (forced toward 0) must still take the sky to black.
+        float blackout = m_ForcedNormalized.HasValue ? Mathf.Clamp01(m_ForcedNormalized.Value) : 1f;
 
         RenderSettings.ambientMode = AmbientMode.Flat;
-        RenderSettings.ambientLight = Color.Lerp(m_DarkAmbient, m_FireAmbient, normalized);
-        RenderSettings.ambientIntensity = Mathf.Lerp(m_DarkAmbientIntensity, m_FireAmbientIntensity, normalized);
+        Color fireAmbient = Color.Lerp(m_DarkAmbient, m_FireAmbient, normalized);
+        float fireIntensity = Mathf.Lerp(m_DarkAmbientIntensity, m_FireAmbientIntensity, normalized);
+        RenderSettings.ambientLight = Color.Lerp(fireAmbient, m_DawnAmbient, dawn);
+        RenderSettings.ambientIntensity = Mathf.Lerp(fireIntensity, m_DawnAmbientIntensity, dawn) * blackout;
 
         RenderSettings.fog = m_UseFog;
         RenderSettings.fogMode = FogMode.Exponential;
-        RenderSettings.fogColor = m_FogColor;
-        RenderSettings.fogDensity = m_FogDensity;
+        RenderSettings.fogColor = Color.Lerp(m_FogColor, m_DawnFogColor, dawn) * blackout;
+        RenderSettings.fogDensity = Mathf.Lerp(m_FogDensity, m_DawnFogDensity, dawn);
 
         if (m_MoonLight != null)
-            m_MoonLight.intensity = Mathf.Lerp(m_MoonIntensityDark, m_MoonIntensityLit, normalized);
+        {
+            float moon = Mathf.Lerp(m_MoonIntensityDark, m_MoonIntensityLit, normalized);
+            m_MoonLight.intensity = (moon + m_SunIntensityDawn * dawn * dawn) * blackout;
+            m_MoonLight.color = Color.Lerp(m_SunColorNight, m_SunColorDawn, dawn);
+            m_MoonLight.transform.rotation = Quaternion.Euler(Mathf.Lerp(m_SunPitchNight, m_SunPitchDawn, dawn), m_SunYaw, 0f);
+        }
+
+        if (m_SkyMaterial != null)
+        {
+            m_SkyMaterial.SetFloat("_Exposure", Mathf.Lerp(m_SkyExposureNight, m_SkyExposureDawn, dawn) * blackout);
+            m_SkyMaterial.SetColor("_GroundColor", Color.Lerp(m_GroundColorNight, m_GroundColorDawn, dawn));
+        }
     }
 }

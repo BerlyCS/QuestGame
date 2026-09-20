@@ -14,9 +14,9 @@ GameObject:
   - component: {fileID: 2705448344103058691}
   - component: {fileID: 4479014070548619398}
   - component: {fileID: 216970886436304601}
-  - component: {fileID: 6866865705413953605}
   - component: {fileID: 449035906915213351}
-  - component: {fileID: 7100247871744192919}
+  - component: {fileID: 6596959672545578073}
+  - component: {fileID: 7587030691751347927}
   - component: {fileID: 355561644315247958}
   m_Layer: 0
   m_Name: Log
@@ -47,7 +47,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5569117884018972077}
-  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
+  m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!136 &1283363590857063400
 CapsuleCollider:
   m_ObjectHideFlags: 0
@@ -96,7 +96,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: dec7e158aba281c47b8c5dcb42fa4d27, type: 2}
+  - {fileID: 2100000, guid: 62d7538a417bbe641a3e65ff6600a72b, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -170,28 +170,6 @@ MonoBehaviour:
   _kinematicWhileSelected: 1
   _throwWhenUnselected: 1
   _forceKinematicDisabled: 0
---- !u!114 &6866865705413953605
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5569117884018972077}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5a1bc992571301d4a9602ac95ef4c71a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Oculus.Interaction::Oculus.Interaction.GrabInteractable
-  _interactorFilters: []
-  _maxInteractors: -1
-  _maxSelectingInteractors: -1
-  _data: {fileID: 0}
-  _pointableElement: {fileID: 216970886436304601}
-  _rigidbody: {fileID: 4479014070548619398}
-  _grabSource: {fileID: 0}
-  _useClosestPointAsGrabSource: 0
-  _releaseDistance: 0
-  _resetGrabOnGrabsUpdated: 1
 --- !u!114 &449035906915213351
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -232,7 +210,7 @@ MonoBehaviour:
   _movementProvider: {fileID: 0}
   _handAligment: 1
   _handGrabPoses: []
---- !u!114 &7100247871744192919
+--- !u!114 &6596959672545578073
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -241,12 +219,52 @@ MonoBehaviour:
   m_GameObject: {fileID: 5569117884018972077}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6615de1c333738747abf98f31352e604, type: 3}
+  m_Script: {fileID: 11500000, guid: baed3e011583e1844a6e85b1cd0657f2, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Oculus.Interaction::Oculus.Interaction.Throw.ThrowTuner
-  _profile: {fileID: 11400000, guid: fa72e8250ba3f514390f1b2a188b4865, type: 2}
-  _grabbable: {fileID: 216970886436304601}
+  m_EditorClassIdentifier: Oculus.Interaction::Oculus.Interaction.HandGrab.DistanceHandGrabInteractable
+  _interactorFilters: []
+  _maxInteractors: -1
+  _maxSelectingInteractors: -1
+  _data: {fileID: 0}
+  _pointableElement: {fileID: 216970886436304601}
   _rigidbody: {fileID: 4479014070548619398}
+  _resetGrabOnGrabsUpdated: 1
+  _slippiness: 0
+  _supportedGrabTypes: 3
+  _pinchGrabRules:
+    _thumbRequirement: 1
+    _indexRequirement: 1
+    _middleRequirement: 1
+    _ringRequirement: 0
+    _pinkyRequirement: 0
+    _unselectMode: 0
+  _palmGrabRules:
+    _thumbRequirement: 1
+    _indexRequirement: 2
+    _middleRequirement: 2
+    _ringRequirement: 2
+    _pinkyRequirement: 1
+    _unselectMode: 0
+  _movementProvider: {fileID: 0}
+  _handAligment: 1
+  _handGrabPoses: []
+--- !u!114 &7587030691751347927
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5569117884018972077}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7424d858363c84d3d8db1e673d51ab8a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GrabHighlight
+  m_GlowMaterial: {fileID: 2100000, guid: 0daabcd3e8aa34567a97f5d424e77928, type: 2}
+  m_HoverColor: {r: 1, g: 0.7, b: 0.2, a: 1}
+  m_HeldColor: {r: 1, g: 0.95, b: 0.65, a: 1}
+  m_HaloThickness: 0.025
+  m_GrabSound: 1
 --- !u!114 &355561644315247958
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -259,7 +277,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1bbf2dc49f1b63741803705584a6ed88, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Log
-  m_FuelValue: 0.25
+  m_FuelValue: 25
   m_ConsumeEffect: {fileID: 0}
   m_OnConsumed:
     m_PersistentCalls:
