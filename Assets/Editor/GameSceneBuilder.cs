@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using Oculus.Interaction;
+using Oculus.Interaction.Grab;
 using Oculus.Interaction.HandGrab;
 using Oculus.Interaction.Input;
 using Oculus.Interaction.Throw;
@@ -25,6 +26,7 @@ public static class GameSceneBuilder
     const string k_AxeModelPath = "Assets/Models/Axe/Axe.fbx";
     const string k_AxeTexturePath = "Assets/Models/Axe/AxeTexture.png";
     const float k_AxeModelScale = 20f;
+    const string k_DeathSfxPath = "Assets/Audio/Enemies/lego-breaking.mp3";
     const string k_NightSkyMaterialPath = "Assets/Day-Night Skyboxes/Materials/SkyMidnight.mat";
     const string k_LogModelPath = "Assets/Static Soul Studio/Wood Pack/Built-in/Prefabs/Log_1.prefab";
     const float k_LogModelLength = 0.7f;
@@ -1021,6 +1023,7 @@ public static class GameSceneBuilder
         Wire(skeleton, "m_Body", body.transform);
         Wire(skeleton, "m_LeftArm", leftArm.transform);
         Wire(skeleton, "m_RightArm", rightArm.transform);
+        Wire(skeleton, "m_DeathSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_DeathSfxPath));
 
         var serialized = new SerializedObject(skeleton);
         var rendererArray = serialized.FindProperty("m_Renderers");
@@ -1310,10 +1313,13 @@ public static class GameSceneBuilder
 
         AddFittedCollider(axe);
         AddThrowable(axe, 1.2f, s_AxeProfile, despawn: true);
+        RestrictToSingleHand(axe);
+        RestrictToPalmGrab(axe);
         axe.AddComponent<EnemyBanisher>();
 
-        // Force the axe to always be held by its grip instead of by the blade.
-        AddGripHandle(axe, new Vector3(-0.04f, -0.09f, -0.1f), Quaternion.Euler(-120f, -90f, 0f));
+        // Grip the handle (local +Z) with the palm, near the butt end. The pose
+        // transform's local +X axis is the handle axis the hand wraps around.
+        AddGripHandle(axe, new Vector3(0f, 0f, -0.12f), Quaternion.Euler(0f, 90f, 180f));
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(axe, $"{k_PrefabFolder}/Axe.prefab");
         Object.DestroyImmediate(axe);
@@ -1413,6 +1419,34 @@ public static class GameSceneBuilder
 
         if (despawn)
             go.AddComponent<ThrowableDespawn>();
+    }
+
+    /// <summary>
+    /// Limits the object to a single grabbing hand at a time so a second hand
+    /// cannot grab it while it is already held.
+    /// </summary>
+    static void RestrictToSingleHand(GameObject go)
+    {
+        foreach (var grabbable in go.GetComponentsInChildren<Grabbable>(true))
+            grabbable.MaxGrabPoints = 1;
+
+        foreach (var grab in go.GetComponentsInChildren<GrabInteractable>(true))
+            grab.MaxSelectingInteractors = 1;
+
+        foreach (var handGrab in go.GetComponentsInChildren<HandGrabInteractable>(true))
+            handGrab.MaxSelectingInteractors = 1;
+    }
+
+    /// <summary>
+    /// Restricts hand grabs to the palm anchor only. Without this a pinch grab
+    /// anchors to the interactor's pinch point (between thumb and index) instead
+    /// of the palm point the grip pose describes, so the object snaps to two
+    /// different places depending on how the hand closes.
+    /// </summary>
+    static void RestrictToPalmGrab(GameObject go)
+    {
+        foreach (var handGrab in go.GetComponentsInChildren<HandGrabInteractable>(true))
+            handGrab.InjectSupportedGrabTypes(GrabTypeFlags.Palm);
     }
 
     /// <summary>

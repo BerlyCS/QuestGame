@@ -1239,13 +1239,13 @@ MonoBehaviour:
   m_MoveSpeed: 0.8
   m_TurnSpeed: 540
   m_KneelDistance: 1.6
-  m_AttackInterval: 1.4
-  m_AttackFuelDrain: 3.5
+  m_AttackInterval: 2.5
+  m_AttackFuelDrain: 1.5
   m_HuntsPlayer: 0
   m_HunterMoveSpeed: 0.4
   m_PlayerAttackRange: 1
-  m_PlayerAttackInterval: 1.2
-  m_PlayerDamage: 12
+  m_PlayerAttackInterval: 2
+  m_PlayerDamage: 8
   m_RepelFuelThreshold: 0.75
   m_RepelDistance: 4.5
   m_Campfire: {fileID: 0}

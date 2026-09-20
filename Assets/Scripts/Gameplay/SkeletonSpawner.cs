@@ -21,19 +21,19 @@ public class SkeletonSpawner : MonoBehaviour
     [Header("Activation")]
     [SerializeField] CampfireFuel m_Campfire;
     [Tooltip("Fuel level (0-1) the player must build the fire up to before the first wave starts.")]
-    [SerializeField] float m_ActivationFuelNormalized = 0.4f;
+    [SerializeField] float m_ActivationFuelNormalized = 0.5f;
 
     [Header("Spawning")]
-    [SerializeField] float m_StartDelay = 8f;
-    [SerializeField] float m_SpawnInterval = 4.5f;
+    [SerializeField] float m_StartDelay = 15f;
+    [SerializeField] float m_SpawnInterval = 7f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
-    [SerializeField] int m_MaxAlive = 6;
-    [SerializeField] int m_TotalToSpawn = 30;
+    [SerializeField] int m_MaxAlive = 4;
+    [SerializeField] int m_TotalToSpawn = 18;
 
     [Header("Difficulty")]
-    [SerializeField] float m_MinInterval = 1.5f;
-    [SerializeField] float m_IntervalRampPerSpawn = 0.08f;
+    [SerializeField] float m_MinInterval = 3f;
+    [SerializeField] float m_IntervalRampPerSpawn = 0.05f;
 
     bool m_Activated;
     float m_NextSpawnTime;

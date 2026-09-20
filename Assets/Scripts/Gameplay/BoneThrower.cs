@@ -21,8 +21,8 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     [SerializeField] float m_StopDistance = 8f;
 
     [Header("Attack")]
-    [SerializeField] float m_ThrowInterval = 4f;
-    [SerializeField] float m_ThrowFuelDamage = 4f;
+    [SerializeField] float m_ThrowInterval = 7f;
+    [SerializeField] float m_ThrowFuelDamage = 1.5f;
     [SerializeField] float m_ThrowArcHeight = 2.5f;
     [SerializeField] float m_ThrowDuration = 1.4f;
     [SerializeField] GameObject m_BonePrefab;
@@ -40,6 +40,11 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     [SerializeField] float m_BobFrequency = 6f;
     [SerializeField] float m_ArmSwing = 35f;
     [SerializeField] Color m_HitFlashColor = new Color(1f, 0.25f, 0.2f);
+
+    [Header("Death")]
+    [SerializeField] AudioClip m_DeathSfx;
+    [SerializeField, Range(0f, 1f)] float m_DeathSfxVolume = 0.85f;
+    [SerializeField] bool m_DeathParticles = true;
 
     [Header("Events")]
     [SerializeField] UnityEvent m_OnDied = new UnityEvent();
@@ -182,6 +187,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     void Die()
     {
         m_Hits = 0;
+        SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume, m_DeathParticles);
         m_OnDied.Invoke();
         Destroy(gameObject);
     }

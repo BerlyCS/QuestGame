@@ -24,15 +24,15 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     [Header("Attack")]
     [SerializeField] float m_KneelDistance = 1.6f;
-    [SerializeField] float m_AttackInterval = 1.4f;
-    [SerializeField] float m_AttackFuelDrain = 3.5f;
+    [SerializeField] float m_AttackInterval = 2.5f;
+    [SerializeField] float m_AttackFuelDrain = 1.5f;
 
     [Header("Hunter (attacks the player instead of the fire)")]
     [SerializeField] bool m_HuntsPlayer;
     [SerializeField] float m_HunterMoveSpeed = 0.4f;
     [SerializeField] float m_PlayerAttackRange = 1.0f;
-    [SerializeField] float m_PlayerAttackInterval = 1.2f;
-    [SerializeField] float m_PlayerDamage = 12f;
+    [SerializeField] float m_PlayerAttackInterval = 2f;
+    [SerializeField] float m_PlayerDamage = 8f;
 
     [Header("Repelled by light")]
     [SerializeField] float m_RepelFuelThreshold = 0.75f;
@@ -51,6 +51,11 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     [SerializeField] float m_ArmSwing = 35f;
     [SerializeField] float m_KneelDropAmount = 0.3f;
     [SerializeField] Color m_HitFlashColor = new Color(1f, 0.25f, 0.2f);
+
+    [Header("Death")]
+    [SerializeField] AudioClip m_DeathSfx;
+    [SerializeField, Range(0f, 1f)] float m_DeathSfxVolume = 0.85f;
+    [SerializeField] bool m_DeathParticles = true;
 
     [Header("Events")]
     [SerializeField] UnityEvent m_OnDied = new UnityEvent();
@@ -256,6 +261,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     void Die()
     {
         m_Hits = 0;
+        SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume, m_DeathParticles);
         m_OnDied.Invoke();
         Destroy(gameObject);
     }

@@ -20,15 +20,15 @@ public class BoneThrowerSpawner : MonoBehaviour
     [Header("Activation")]
     [SerializeField] CampfireFuel m_Campfire;
     [Tooltip("Fuel level (0-1) the player must build the fire up to before the first Lanzahuesos appears.")]
-    [SerializeField] float m_ActivationFuelNormalized = 0.5f;
+    [SerializeField] float m_ActivationFuelNormalized = 0.6f;
 
     [Header("Spawning")]
-    [SerializeField] float m_StartDelay = 20f;
-    [SerializeField] float m_SpawnInterval = 25f;
+    [SerializeField] float m_StartDelay = 35f;
+    [SerializeField] float m_SpawnInterval = 40f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
-    [SerializeField] int m_MaxAlive = 2;
-    [SerializeField] int m_TotalToSpawn = 6;
+    [SerializeField] int m_MaxAlive = 1;
+    [SerializeField] int m_TotalToSpawn = 4;
 
     bool m_Activated;
     float m_NextSpawnTime;

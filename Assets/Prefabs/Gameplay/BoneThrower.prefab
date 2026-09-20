@@ -744,8 +744,8 @@ MonoBehaviour:
   m_MoveSpeed: 0.8
   m_TurnSpeed: 540
   m_StopDistance: 8
-  m_ThrowInterval: 4
-  m_ThrowFuelDamage: 4
+  m_ThrowInterval: 7
+  m_ThrowFuelDamage: 1.5
   m_ThrowArcHeight: 2.5
   m_ThrowDuration: 1.4
   m_BonePrefab: {fileID: 3937105530769725570, guid: e06bf06b46c4a47e7b3a1a9566b50f28, type: 3}
@@ -770,6 +770,9 @@ MonoBehaviour:
   m_BobFrequency: 6
   m_ArmSwing: 35
   m_HitFlashColor: {r: 1, g: 0.25, b: 0.2, a: 1}
+  m_DeathSfx: {fileID: 8300000, guid: 684a8d8b306b477f87be61ff629532de, type: 3}
+  m_DeathSfxVolume: 0.85
+  m_DeathParticles: 1
   m_OnDied:
     m_PersistentCalls:
       m_Calls: []

@@ -25,7 +25,7 @@ public class CampfireFuel : MonoBehaviour
 
     [SerializeField]
     [Tooltip("Fuel consumed per second of real time. The fire can burn out completely.")]
-    float m_BurnRatePerSecond = 0.55f;
+    float m_BurnRatePerSecond = 0.35f;
 
     [Header("Fire Light")]
     [SerializeField] Light m_FireLight;

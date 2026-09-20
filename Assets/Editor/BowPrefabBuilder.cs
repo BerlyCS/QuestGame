@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Oculus.Interaction;
 using Oculus.Interaction.Editor.QuickActions;
+using Oculus.Interaction.Grab;
 using Oculus.Interaction.HandGrab;
 using UnityEditor;
 using UnityEngine;
@@ -219,6 +220,15 @@ public static class BowPrefabBuilder
             {
                 handGrab.MaxSelectingInteractors = 1;
             }
+        }
+
+        // Grabbing a handle-like prop with a pinch anchors to the interactor's
+        // pinch point (between thumb and index) instead of the palm point the
+        // grip pose describes, so the bow would land in one of two spots
+        // depending on the gesture. Support palm grabs only.
+        foreach (HandGrabInteractable handGrab in root.GetComponentsInChildren<HandGrabInteractable>(true))
+        {
+            handGrab.InjectSupportedGrabTypes(GrabTypeFlags.Palm);
         }
 
         Bow bow = root.AddComponent<Bow>();

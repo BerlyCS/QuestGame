@@ -15,7 +15,7 @@ MonoBehaviour:
   targetDeviceTypes: 02000000030000000400000005000000i
   allowOptional3DofHeadTracking: 0
   handTrackingSupport: 2
-  handTrackingFrequency: 1
+  handTrackingFrequency: 2
   anchorSupport: 1
   sharedAnchorSupport: 0
   renderModelSupport: 0

@@ -935,13 +935,13 @@ MonoBehaviour:
   m_MoveSpeed: 0.8
   m_TurnSpeed: 540
   m_KneelDistance: 1.6
-  m_AttackInterval: 1.4
-  m_AttackFuelDrain: 3.5
+  m_AttackInterval: 2.5
+  m_AttackFuelDrain: 1.5
   m_HuntsPlayer: 0
   m_HunterMoveSpeed: 0.4
   m_PlayerAttackRange: 1
-  m_PlayerAttackInterval: 1.2
-  m_PlayerDamage: 12
+  m_PlayerAttackInterval: 2
+  m_PlayerDamage: 8
   m_RepelFuelThreshold: 0.75
   m_RepelDistance: 4.5
   m_Campfire: {fileID: 0}
@@ -965,6 +965,9 @@ MonoBehaviour:
   m_ArmSwing: 35
   m_KneelDropAmount: 0.3
   m_HitFlashColor: {r: 1, g: 0.25, b: 0.2, a: 1}
+  m_DeathSfx: {fileID: 8300000, guid: 684a8d8b306b477f87be61ff629532de, type: 3}
+  m_DeathSfxVolume: 0.85
+  m_DeathParticles: 1
   m_OnDied:
     m_PersistentCalls:
       m_Calls: []

@@ -17,10 +17,10 @@ public class HunterSpawner : MonoBehaviour
 
     [Header("Timing")]
     [Tooltip("Fraction of the night (0-1) that must pass before the first Cazador appears.")]
-    [SerializeField] float m_StartAtSurvival = 0.2f;
-    [SerializeField] float m_SpawnInterval = 14f;
-    [SerializeField] float m_MinInterval = 7f;
-    [SerializeField] float m_IntervalRampPerSpawn = 1.2f;
+    [SerializeField] float m_StartAtSurvival = 0.3f;
+    [SerializeField] float m_SpawnInterval = 22f;
+    [SerializeField] float m_MinInterval = 12f;
+    [SerializeField] float m_IntervalRampPerSpawn = 0.8f;
 
     [Header("Placement")]
     [SerializeField] float m_SpawnDistance = 9f;
@@ -29,8 +29,8 @@ public class HunterSpawner : MonoBehaviour
     [SerializeField] float m_BehindChance = 0.7f;
 
     [Header("Limits")]
-    [SerializeField] int m_MaxAlive = 2;
-    [SerializeField] int m_MaxAliveLate = 3;
+    [SerializeField] int m_MaxAlive = 1;
+    [SerializeField] int m_MaxAliveLate = 2;
     [SerializeField] float m_LateAtSurvival = 0.6f;
 
     int m_Spawned;

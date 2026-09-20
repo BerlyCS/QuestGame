@@ -59,7 +59,7 @@ public static class WireEnemySystems
         var campfireSo = new SerializedObject(campfire);
         SetFloat(campfireSo, "m_MaxFuel", 90f);
         SetFloat(campfireSo, "m_StartingFuel", 55f);
-        SetFloat(campfireSo, "m_BurnRatePerSecond", 0.55f);
+        SetFloat(campfireSo, "m_BurnRatePerSecond", 0.35f);
         campfireSo.ApplyModifiedPropertiesWithoutUndo();
         EditorUtility.SetDirty(campfire);
 

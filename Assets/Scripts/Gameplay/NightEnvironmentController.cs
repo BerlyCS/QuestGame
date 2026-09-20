@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -5,9 +6,10 @@ using UnityEngine.Rendering;
 /// Two things drive the world's light. The campfire's fuel darkens it as the
 /// fire dies (the fire is the main light source; the moon only gives a faint
 /// cold rim). And the survival clock (GameManager.SurvivalNormalized) slowly
-/// brings the dawn in across the whole 360 degrees: the procedural sky, the
-/// "sun" light rising from below the horizon, ambient light and fog all warm
-/// up and brighten together, so the player can see the night ending from any
+/// brings the dawn in across the whole 360 degrees: the night sky warms up,
+/// the moon fills out from a dark disc to a full one, a low-poly sun climbs
+/// into the sky, ambient light and fog brighten together and a chorus of
+/// placeholder birds fades in, so the player can see the night ending from any
 /// direction.
 /// </summary>
 [DisallowMultipleComponent]
@@ -45,8 +47,10 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] GameManager m_GameManager;
     [Tooltip("Procedural skybox material; its exposure and ground colour are animated. Optional.")]
     [SerializeField] Material m_SkyMaterial;
-    [Tooltip("pow(survival, curve): above 1 keeps the first minute dim and lets the light gather speed.")]
-    [SerializeField] float m_DawnCurve = 1.25f;
+    [Tooltip("Fraction of the survival clock (0-1) the world holds at full midnight before the dawn starts.")]
+    [SerializeField] float m_DawnStart = 0.66f;
+    [Tooltip("pow(): above 1 keeps the first minute dim and lets the light gather speed.")]
+    [SerializeField] float m_DawnCurve = 1.8f;
     [SerializeField] float m_SunPitchNight = -22f;
     [SerializeField] float m_SunPitchDawn = 12f;
     [Tooltip("Compass heading the sun rises from: 180 = the +Z horizon the player faces.")]
@@ -67,7 +71,40 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] Color m_DawnFogColor = new Color(0.62f, 0.5f, 0.45f);
     [SerializeField] float m_DawnFogDensity = 0.018f;
 
+    [Header("Moon phase (progress indicator)")]
+    [Tooltip("The moon's renderer. Left empty, it is found by name at Awake.")]
+    [SerializeField] Renderer m_MoonRenderer;
+    [Tooltip("Dark, almost invisible disc at midnight.")]
+    [SerializeField] Color m_MoonColorNew = new Color(0.02f, 0.02f, 0.03f);
+    [SerializeField] Color m_MoonColorFull = new Color(0.9f, 0.92f, 1f);
+    [SerializeField] Color m_MoonEmissionNew = new Color(0f, 0f, 0f);
+    [SerializeField] Color m_MoonEmissionFull = new Color(1.5f, 1.6f, 2f);
+
+    [Header("Rising sun")]
+    [SerializeField] bool m_BuildSun = true;
+    [Tooltip("Optional sun material. Left empty, a fog-free material is built at Awake.")]
+    [SerializeField] Material m_SunMaterial;
+    [SerializeField] Color m_SunColor = new Color(1f, 0.96f, 0.85f);
+    [SerializeField] float m_SunDistance = 400f;
+    [Tooltip("Diameter of the low-poly sun sphere at full size.")]
+    [SerializeField] float m_SunDiameter = 34f;
+    [Tooltip("Dawn progress (0-1) at which the sun starts to climb into view.")]
+    [SerializeField] float m_SunAppearAt = 0.45f;
+
+    [Header("Dawn birds (placeholder)")]
+    [Tooltip("Fades in as the sky brightens. Left empty, the generated birdsong is used.")]
+    [SerializeField] AudioClip m_DawnBirds;
+    [SerializeField] float m_DawnBirdsVolume = 0.55f;
+    [Tooltip("Dawn progress (0-1) at which the birds can first be heard.")]
+    [SerializeField] float m_DawnBirdsStart = 0.25f;
+
     float? m_ForcedNormalized;
+
+    Material m_MoonMaterial;
+    Transform m_Sun;
+    Renderer m_SunRenderer;
+    Material m_SunMaterialInstance;
+    AudioSource m_BirdsSource;
 
     /// <summary>
     /// When set, overrides the fuel-driven light level (0-1) every frame instead of
@@ -83,6 +120,9 @@ public class NightEnvironmentController : MonoBehaviour
 
     void Awake()
     {
+        CacheMoon();
+        BuildSun();
+        BuildBirds();
         Apply(1f);
     }
 
@@ -92,10 +132,32 @@ public class NightEnvironmentController : MonoBehaviour
         Apply(n);
     }
 
+    void OnDestroy()
+    {
+        if (m_SunMaterialInstance != null)
+            Destroy(m_SunMaterialInstance);
+    }
+
     void Apply(float normalized)
     {
-        float dawn = m_GameManager != null ? Mathf.Pow(m_GameManager.SurvivalNormalized, m_DawnCurve) : 0f;
-        Apply(normalized, dawn);
+        float n = m_GameManager != null ? m_GameManager.SurvivalNormalized : 0f;
+        Apply(normalized, DawnFromSurvival(n));
+    }
+
+    /// <summary>
+    /// Eases the raw survival clock into "how far into the dawn we are": nothing
+    /// happens until <see cref="m_DawnStart"/>, then the light gathers speed
+    /// (slow at first, fast at the end).
+    /// </summary>
+    public float DawnFromSurvival(float survivalNormalized)
+    {
+        float n = Mathf.Clamp01(survivalNormalized);
+        float hold = Mathf.Clamp01(m_DawnStart);
+        if (hold >= 1f)
+            return n >= 1f ? 1f : 0f;
+
+        float local = Mathf.InverseLerp(hold, 1f, n);
+        return Mathf.Pow(local, m_DawnCurve);
     }
 
     /// <summary>
@@ -130,6 +192,10 @@ public class NightEnvironmentController : MonoBehaviour
             m_MoonLight.transform.rotation = Quaternion.Euler(Mathf.Lerp(m_SunPitchNight, m_SunPitchDawn, dawn), m_SunYaw, 0f);
         }
 
+        ApplyMoonPhase(dawn, blackout);
+        ApplySun(dawn, blackout);
+        ApplyBirds(dawn);
+
         if (m_SkyMaterial != null)
         {
             // Property-guarded so the same controller drives both the procedural
@@ -144,5 +210,196 @@ public class NightEnvironmentController : MonoBehaviour
             if (m_SkyMaterial.HasProperty("_Tint"))
                 m_SkyMaterial.SetColor("_Tint", Color.Lerp(m_SkyTintNight, m_SkyTintDawn, dawn));
         }
+    }
+
+    void CacheMoon()
+    {
+        if (m_MoonRenderer == null)
+        {
+            foreach (var renderer in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Include))
+            {
+                if (renderer.gameObject.name == "Moon")
+                {
+                    m_MoonRenderer = renderer;
+                    break;
+                }
+            }
+        }
+
+        if (m_MoonRenderer != null)
+        {
+            // Per-renderer instance so the moon phase never dirties the shared asset.
+            m_MoonMaterial = m_MoonRenderer.material;
+            m_MoonMaterial.EnableKeyword("_EMISSION");
+        }
+    }
+
+    void ApplyMoonPhase(float dawn, float blackout)
+    {
+        if (m_MoonMaterial == null)
+            return;
+
+        // New moon at midnight, full moon by the time the sky breaks: the only
+        // progress readout the game has (see the cero-UI rule).
+        Color color = Color.Lerp(m_MoonColorNew, m_MoonColorFull, dawn);
+        Color emission = Color.Lerp(m_MoonEmissionNew, m_MoonEmissionFull, dawn);
+
+        if (m_MoonMaterial.HasProperty("_BaseColor"))
+            m_MoonMaterial.SetColor("_BaseColor", color);
+        if (m_MoonMaterial.HasProperty("_Color"))
+            m_MoonMaterial.SetColor("_Color", color);
+        if (m_MoonMaterial.HasProperty("_EmissionColor"))
+            m_MoonMaterial.SetColor("_EmissionColor", emission * blackout);
+    }
+
+    void BuildSun()
+    {
+        if (!m_BuildSun || m_Sun != null)
+            return;
+
+        var go = new GameObject("Dawn Sun");
+        go.transform.SetParent(transform, false);
+
+        var filter = go.AddComponent<MeshFilter>();
+        filter.sharedMesh = BuildIcoSphere(1);
+
+        var renderer = go.AddComponent<MeshRenderer>();
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        renderer.sharedMaterial = m_SunMaterial != null ? m_SunMaterial : CreateSunMaterial();
+
+        go.SetActive(false);
+        m_Sun = go.transform;
+        m_SunRenderer = renderer;
+    }
+
+    Material CreateSunMaterial()
+    {
+        Shader shader = Shader.Find("Custom/SunDisk");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+
+        m_SunMaterialInstance = new Material(shader) { name = "M_Sun (Runtime)" };
+        if (m_SunMaterialInstance.HasProperty("_Color"))
+            m_SunMaterialInstance.SetColor("_Color", m_SunColor);
+        if (m_SunMaterialInstance.HasProperty("_BaseColor"))
+            m_SunMaterialInstance.SetColor("_BaseColor", m_SunColor);
+        if (m_SunMaterialInstance.HasProperty("_Boost"))
+            m_SunMaterialInstance.SetFloat("_Boost", 1.5f);
+        return m_SunMaterialInstance;
+    }
+
+    void ApplySun(float dawn, float blackout)
+    {
+        if (m_Sun == null)
+            return;
+
+        float appear = Mathf.InverseLerp(m_SunAppearAt, 1f, dawn);
+        appear = appear * appear; // lingers tiny then billows up as day breaks
+
+        m_Sun.gameObject.SetActive(appear > 0.001f && blackout > 0.001f);
+        if (!m_Sun.gameObject.activeSelf)
+            return;
+
+        // The sun rises opposite the light's forward direction, so the disk and the
+        // directional light always agree about where the day is coming from.
+        Vector3 direction = m_MoonLight != null ? -m_MoonLight.transform.forward : Vector3.up;
+        m_Sun.position = direction * m_SunDistance;
+        m_Sun.localScale = Vector3.one * (m_SunDiameter * appear);
+
+        if (m_SunRenderer != null)
+        {
+            Material material = m_SunRenderer.material;
+            if (material != null)
+            {
+                if (material.HasProperty("_Color"))
+                    material.SetColor("_Color", m_SunColor);
+                if (material.HasProperty("_BaseColor"))
+                    material.SetColor("_BaseColor", m_SunColor);
+                if (material.HasProperty("_Boost"))
+                    material.SetFloat("_Boost", Mathf.Lerp(0.4f, 1.6f, appear) * blackout);
+            }
+        }
+    }
+
+    void BuildBirds()
+    {
+        AudioClip clip = m_DawnBirds != null ? m_DawnBirds : ProceduralSfx.BirdSong;
+        if (clip == null)
+            return;
+
+        m_BirdsSource = gameObject.AddComponent<AudioSource>();
+        m_BirdsSource.clip = clip;
+        m_BirdsSource.loop = true;
+        m_BirdsSource.spatialBlend = 0f;
+        m_BirdsSource.playOnAwake = false;
+        m_BirdsSource.volume = 0f;
+        m_BirdsSource.Play();
+    }
+
+    void ApplyBirds(float dawn)
+    {
+        if (m_BirdsSource == null)
+            return;
+
+        float target = Mathf.InverseLerp(m_DawnBirdsStart, 1f, dawn);
+        m_BirdsSource.volume = Mathf.SmoothStep(0f, 1f, target) * m_DawnBirdsVolume;
+    }
+
+    /// <summary>Faceted icosphere - a deliberately low-poly stand-in for the sun.</summary>
+    static Mesh BuildIcoSphere(int subdivisions)
+    {
+        const float t = 1.61803398875f;
+        var vertices = new List<Vector3>
+        {
+            new Vector3(-1, t, 0), new Vector3(1, t, 0), new Vector3(-1, -t, 0), new Vector3(1, -t, 0),
+            new Vector3(0, -1, t), new Vector3(0, 1, t), new Vector3(0, -1, -t), new Vector3(0, 1, -t),
+            new Vector3(t, 0, -1), new Vector3(t, 0, 1), new Vector3(-t, 0, -1), new Vector3(-t, 0, 1)
+        };
+        for (int i = 0; i < vertices.Count; i++)
+            vertices[i] = vertices[i].normalized;
+
+        var triangles = new List<int>
+        {
+            0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
+            1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+            3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
+            4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
+        };
+
+        for (int s = 0; s < subdivisions; s++)
+            triangles = Subdivide(vertices, triangles);
+
+        var mesh = new Mesh { name = "IcoSphere" };
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    static List<int> Subdivide(List<Vector3> vertices, List<int> triangles)
+    {
+        var result = new List<int>(triangles.Count * 4);
+        for (int i = 0; i < triangles.Count; i += 3)
+        {
+            int a = triangles[i];
+            int b = triangles[i + 1];
+            int c = triangles[i + 2];
+
+            int ab = Midpoint(vertices, a, b);
+            int bc = Midpoint(vertices, b, c);
+            int ca = Midpoint(vertices, c, a);
+
+            result.AddRange(new[] { a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca });
+        }
+        return result;
+    }
+
+    static int Midpoint(List<Vector3> vertices, int a, int b)
+    {
+        vertices.Add(((vertices[a] + vertices[b]) * 0.5f).normalized);
+        return vertices.Count - 1;
     }
 }
