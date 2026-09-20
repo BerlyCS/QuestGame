@@ -188,13 +188,13 @@ public static class GameSceneBuilder
             if (headOffset != null)
                 headOffset.vector3Value = new Vector3(0f, 0.15f, 0f);
 
-            // Without this, hand poses aren't populated from controller input at all,
-            // so the hand meshes the Interaction SDK's comprehensive rig ships with
-            // never render while holding Touch controllers: the player sees the
-            // world but no hands, even though they're grabbing things correctly.
+            // Hands-only project: hand poses must come from real hand tracking, not
+            // from controller data. ConformingToController lets a powered Touch
+            // controller drive its matching hand, which freezes that hand at the
+            // controller's pose and ignores the real hand.
             var handPoses = serialized.FindProperty("controllerDrivenHandPosesType");
             if (handPoses != null)
-                handPoses.enumValueIndex = (int)OVRManager.ControllerDrivenHandPosesType.ConformingToController;
+                handPoses.enumValueIndex = (int)OVRManager.ControllerDrivenHandPosesType.None;
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
