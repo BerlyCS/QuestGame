@@ -29,7 +29,7 @@ public static class BowPrefabBuilder
 
     // Scale applied to the whole bow and arrow so they sit comfortably in the
     // hand; the meshes are authored quite large.
-    const float k_BowScale = 0.7f;
+    const float k_BowScale = 0.49f;
 
     // Both the bow and the arrow live on the Ignore Raycast layer.
     const int k_IgnoreRaycastLayer = 2;

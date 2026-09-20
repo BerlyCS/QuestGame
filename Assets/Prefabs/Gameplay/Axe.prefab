@@ -341,7 +341,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Oculus.Interaction::Oculus.Interaction.HandGrab.HandGrabPose
   _surface: {fileID: 0}
   _relativeTo: {fileID: 6272906126558542976}
-  _usesHandPose: 1
+  _usesHandPose: 0
   _handPose:
     _handedness: 0
     _fingersFreedom: 0200000002000000010000000100000000000000i

@@ -92,7 +92,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.7, y: 0.7, z: 0.7}
+  m_LocalScale: {x: 0.49, y: 0.49, z: 0.49}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 45276524608517737}
@@ -232,7 +232,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Oculus.Interaction::Oculus.Interaction.HandGrab.HandGrabPose
   _surface: {fileID: 0}
   _relativeTo: {fileID: 1785078978068286585}
-  _usesHandPose: 1
+  _usesHandPose: 0
   _handPose:
     _handedness: 0
     _fingersFreedom: 0200000002000000010000000100000000000000i
