@@ -76,6 +76,8 @@ public class CampfireFuel : MonoBehaviour
     void Awake()
     {
         m_FireAudio = GetComponent<AudioSource>();
+        if (m_FireAudio == null)
+            m_FireAudio = gameObject.AddComponent<AudioSource>();
         m_FireAudio.clip = CreateCrackleClip();
         m_FireAudio.loop = true;
         m_FireAudio.playOnAwake = false;
