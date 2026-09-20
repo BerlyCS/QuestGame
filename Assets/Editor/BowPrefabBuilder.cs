@@ -202,6 +202,25 @@ public static class BowPrefabBuilder
 
         Grabbable bowGrabbable = root.GetComponent<Grabbable>();
 
+        // The bow is held by one hand only; the other hand is reserved for the
+        // draw grip so it never accidentally grabs the frame with both hands.
+        Rigidbody bowRigidbody = root.GetComponent<Rigidbody>();
+        bowGrabbable.MaxGrabPoints = 1;
+        foreach (GrabInteractable grab in root.GetComponentsInChildren<GrabInteractable>(true))
+        {
+            if (grab.Rigidbody == bowRigidbody)
+            {
+                grab.MaxSelectingInteractors = 1;
+            }
+        }
+        foreach (HandGrabInteractable handGrab in root.GetComponentsInChildren<HandGrabInteractable>(true))
+        {
+            if (handGrab.Rigidbody == bowRigidbody)
+            {
+                handGrab.MaxSelectingInteractors = 1;
+            }
+        }
+
         Bow bow = root.AddComponent<Bow>();
         bow.InjectGrabbable(bowGrabbable);
 
