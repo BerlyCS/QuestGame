@@ -40,8 +40,16 @@ public class NightEnvironmentController : MonoBehaviour
 
     [Header("Fog")]
     [SerializeField] bool m_UseFog = true;
+    [Tooltip("Exponential-squared fog reads as a wall of darkness rather than a light haze.")]
+    [SerializeField] FogMode m_FogMode = FogMode.ExponentialSquared;
     [SerializeField] Color m_FogColor = new Color(0.05f, 0.06f, 0.09f);
-    [SerializeField] float m_FogDensity = 0.035f;
+    [Tooltip("Fog density while the fire is well fed; the air is clear.")]
+    [SerializeField] float m_FogDensity = 0.012f;
+    [Tooltip("Fog density once the fire is down to embers, so darkness closes in. " +
+        "Ported from dev/Jafet's darkness effect.")]
+    [SerializeField] float m_DarknessFogDensity = 3.5f;
+    [Tooltip("Fuel fraction (0-1) treated as the ember floor when mapping fuel to darkness.")]
+    [SerializeField] float m_DarknessFuelFloor = 0.08f;
 
     [Header("Dawn (driven by survival time)")]
     [SerializeField] GameManager m_GameManager;
@@ -212,9 +220,15 @@ public class NightEnvironmentController : MonoBehaviour
         RenderSettings.ambientIntensity = Mathf.Lerp(fireIntensity, m_DawnAmbientIntensity, dawn) * blackout;
 
         RenderSettings.fog = m_UseFog;
-        RenderSettings.fogMode = FogMode.Exponential;
+        RenderSettings.fogMode = m_FogMode;
         RenderSettings.fogColor = Color.Lerp(m_FogColor, m_DawnFogColor, dawn) * blackout;
-        RenderSettings.fogDensity = Mathf.Lerp(m_FogDensity, m_DawnFogDensity, dawn);
+
+        // Darkness fog (ported from dev/Jafet): the air thickens as the fire
+        // burns down and clears again once it is fed, so letting the fire die
+        // closes the world in. The dawn then clears whatever darkness remains.
+        float visibility = Mathf.Clamp01(Mathf.InverseLerp(m_DarknessFuelFloor, 1f, normalized));
+        float fogDensity = Mathf.Lerp(m_DarknessFogDensity, m_FogDensity, visibility);
+        RenderSettings.fogDensity = Mathf.Lerp(fogDensity, m_DawnFogDensity, dawn);
 
         if (m_MoonLight != null)
         {
