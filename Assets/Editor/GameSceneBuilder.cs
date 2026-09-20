@@ -3,6 +3,7 @@ using System.IO;
 using Oculus.Interaction;
 using Oculus.Interaction.HandGrab;
 using Oculus.Interaction.Input;
+using Oculus.Interaction.Throw;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -18,8 +19,12 @@ public static class GameSceneBuilder
     const string k_ScenePath = "Assets/Scenes/Game.unity";
     const string k_PrefabFolder = "Assets/Prefabs/Gameplay";
     const string k_MaterialFolder = "Assets/Materials/Game";
+    const string k_ProfileFolder = "Assets/Prefabs/Gameplay/ThrowProfiles";
     const string k_RigPrefabPath = "Packages/com.meta.xr.sdk.interaction.ovr/Runtime/Prefabs/OVRComprehensiveInteractionRig.prefab";
     const string k_CameraRigPrefabPath = "Packages/com.meta.xr.sdk.core/Prefabs/OVRCameraRig.prefab";
+    const string k_AxeModelPath = "Assets/Models/Axe/Axe.fbx";
+    const string k_AxeTexturePath = "Assets/Models/Axe/AxeTexture.png";
+    const float k_AxeModelScale = 20f;
 
     static Material s_Ground;
     static Material s_Wood;
@@ -33,6 +38,11 @@ public static class GameSceneBuilder
     static Material s_Flame;
     static Material s_Bone;
     static Material s_Moon;
+    static Material s_Axe;
+
+    static ThrowPhysicsProfile s_AxeProfile;
+    static ThrowPhysicsProfile s_LightThrowProfile;
+    static ThrowPhysicsProfile s_HeavyThrowProfile;
 
     [MenuItem("Tools/Game/Build Game Scene")]
     public static void Build()
@@ -53,6 +63,7 @@ public static class GameSceneBuilder
         AddInteractorHaptics(interactionRig);
 
         CreateMaterials();
+        CreateThrowProfiles();
 
         var environment = new GameObject("Environment").transform;
         BuildGround(environment);
@@ -62,10 +73,13 @@ public static class GameSceneBuilder
         var campfire = BuildCampfire(environment);
         var logPile = BuildLogPile(environment);
         BuildTutorialLog(campfire.transform);
-        var tent = BuildTent(environment);
-        var campProps = BuildCampProps(environment);
-        var treasure = BuildTreasure(environment);
-        var weaponRack = BuildWeaponRack(environment);
+        BuildTent(environment);
+        BuildCampProps(environment);
+        BuildTreasure(environment);
+        BuildWeaponRack(environment);
+        BuildInteractables(environment);
+        BuildEnemyBanisher(environment);
+        BuildShield(interactionRig);
 
         if (rig != null)
             rig.AddComponent<PlayerHealth>();
@@ -75,7 +89,7 @@ public static class GameSceneBuilder
         Wire(night, "m_Campfire", campfire);
         Wire(night, "m_MoonLight", moonLight);
 
-        BuildCampReveal(systems, campfire, tent, campProps, treasure, weaponRack);
+        BuildCampReveal(systems, campfire);
 
         BuildSkeletonSpawner(systems, rig, campfire);
         BuildLogSpawner(systems, logPile);
@@ -94,8 +108,10 @@ public static class GameSceneBuilder
         EnsureFolder("Assets/Scenes");
         EnsureFolder("Assets/Prefabs");
         EnsureFolder(k_PrefabFolder);
+        EnsureFolder(k_ProfileFolder);
         EnsureFolder("Assets/Materials");
         EnsureFolder(k_MaterialFolder);
+        EnsureFolder("Assets/Models");
     }
 
     static void ConfigureLighting()
@@ -281,6 +297,50 @@ public static class GameSceneBuilder
         s_Flame = CreateMaterial("M_Flame", new Color(1f, 0.6f, 0.15f), 0f, 0f, null, "Universal Render Pipeline/Particles/Unlit");
         s_Bone = CreateMaterial("M_Bone", new Color(0.82f, 0.8f, 0.72f), 0f, 0.15f);
         s_Moon = CreateMaterial("M_Moon", new Color(0.9f, 0.92f, 1f), 0f, 0.2f, new Color(1.5f, 1.6f, 2f));
+        s_Axe = CreateTexturedMaterial("M_Axe", k_AxeTexturePath);
+    }
+
+    /// <summary>
+    /// Creates the throw physics profiles used by the throwable objects. These
+    /// mirror the profiles shipped with the Interaction SDK Samples "Throwing"
+    /// showcase (an axe profile plus generic light/heavy profiles).
+    /// </summary>
+    static void CreateThrowProfiles()
+    {
+        s_AxeProfile = CreateThrowProfile("AxeProfile", profile =>
+        {
+            profile.FindProperty("_velocityScale").vector3Value = new Vector3(1.5f, 1f, 1f);
+            profile.FindProperty("_velocityAdd").vector3Value = new Vector3(1f, 0f, 0f);
+            profile.FindProperty("_maxSpeed").floatValue = 20f;
+            profile.FindProperty("_spinScale").vector3Value = new Vector3(0f, 1f, 0f);
+            profile.FindProperty("_maxSpin").floatValue = 200f;
+            profile.FindProperty("_alignForwardOnce").boolValue = true;
+            profile.FindProperty("_forwardLerpSpeed").floatValue = 16f;
+            profile.FindProperty("_enableBuiltIns").boolValue = true;
+            profile.FindProperty("_gravityScale").floatValue = 0.8f;
+            profile.FindProperty("_localConstantTorque").vector3Value = new Vector3(0f, 10f, 0f);
+            profile.FindProperty("_linearDrag").floatValue = 0.002f;
+            profile.FindProperty("_angularDrag").floatValue = 0.005f;
+        });
+
+        s_LightThrowProfile = CreateThrowProfile("LightThrowProfile", profile =>
+        {
+            profile.FindProperty("_maxSpeed").floatValue = 14f;
+            profile.FindProperty("_maxSpin").floatValue = 40f;
+            profile.FindProperty("_enableBuiltIns").boolValue = true;
+            profile.FindProperty("_linearDrag").floatValue = 0.02f;
+            profile.FindProperty("_angularDrag").floatValue = 0.05f;
+        });
+
+        s_HeavyThrowProfile = CreateThrowProfile("HeavyThrowProfile", profile =>
+        {
+            profile.FindProperty("_maxSpeed").floatValue = 8f;
+            profile.FindProperty("_spinScale").vector3Value = new Vector3(0.25f, 0.25f, 0.25f);
+            profile.FindProperty("_maxSpin").floatValue = 8f;
+            profile.FindProperty("_enableBuiltIns").boolValue = true;
+            profile.FindProperty("_linearDrag").floatValue = 0.1f;
+            profile.FindProperty("_angularDrag").floatValue = 0.2f;
+        });
     }
 
     static void BuildGround(Transform parent)
@@ -654,19 +714,7 @@ public static class GameSceneBuilder
         log.name = "Log";
         log.transform.localScale = new Vector3(0.14f, 0.35f, 0.14f);
 
-        var rigidbody = log.AddComponent<Rigidbody>();
-        rigidbody.mass = 0.5f;
-        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
-        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-        var grabbable = log.AddComponent<Grabbable>();
-        var grab = log.AddComponent<GrabInteractable>();
-        grab.InjectRigidbody(rigidbody);
-        grab.InjectOptionalPointableElement(grabbable);
-
-        var handGrab = log.AddComponent<HandGrabInteractable>();
-        handGrab.InjectRigidbody(rigidbody);
-        handGrab.InjectOptionalPointableElement(grabbable);
+        AddThrowable(log, 0.5f, s_LightThrowProfile, despawn: false);
 
         log.AddComponent<Log>();
         log.GetComponent<Renderer>().sharedMaterial = s_Wood;
@@ -813,23 +861,6 @@ public static class GameSceneBuilder
         return prefab;
     }
 
-    /// <summary>
-    /// Hides everything but the (unlit) campfire and log pile until the player
-    /// throws the first log in, then reveals the rest of the camp at once.
-    /// </summary>
-    static void BuildCampReveal(GameObject systems, CampfireFuel campfire, params GameObject[] objectsToReveal)
-    {
-        var reveal = systems.AddComponent<CampRevealController>();
-        Wire(reveal, "m_Campfire", campfire);
-
-        var serialized = new SerializedObject(reveal);
-        var array = serialized.FindProperty("m_ObjectsToReveal");
-        array.arraySize = objectsToReveal.Length;
-        for (int i = 0; i < objectsToReveal.Length; i++)
-            array.GetArrayElementAtIndex(i).objectReferenceValue = objectsToReveal[i];
-        serialized.ApplyModifiedPropertiesWithoutUndo();
-    }
-
     static void BuildSkeletonSpawner(GameObject systems, GameObject rig, CampfireFuel campfire)
     {
         var prefab = BuildSkeletonPrefab();
@@ -862,6 +893,23 @@ public static class GameSceneBuilder
         return treasure;
     }
 
+    /// <summary>
+    /// Hides everything but the (unlit) campfire and log pile until the player
+    /// throws the first log in, then reveals the rest of the camp at once.
+    /// </summary>
+    static void BuildCampReveal(GameObject systems, CampfireFuel campfire, params GameObject[] objectsToReveal)
+    {
+        var reveal = systems.AddComponent<CampRevealController>();
+        Wire(reveal, "m_Campfire", campfire);
+
+        var serialized = new SerializedObject(reveal);
+        var array = serialized.FindProperty("m_ObjectsToReveal");
+        array.arraySize = objectsToReveal.Length;
+        for (int i = 0; i < objectsToReveal.Length; i++)
+            array.GetArrayElementAtIndex(i).objectReferenceValue = objectsToReveal[i];
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
     // To the player's right, close enough to reach without walking, clear of the
     // log pile and bench on the same side.
     static readonly Vector3 k_WeaponRackPosition = new Vector3(1.6f, 0f, 0f);
@@ -883,7 +931,7 @@ public static class GameSceneBuilder
             new Vector3(0f, 0.6f, 0f), new Vector3(0.05f, 0.6f, 0.05f), s_Trunk);
 
         BuildSword(rack.transform);
-        BuildShield(rack.transform);
+        BuildRackShield(rack.transform);
 
         return rack;
     }
@@ -944,7 +992,7 @@ public static class GameSceneBuilder
     /// The disc keeps its own default collider (matches its shape); only the
     /// decorative boss has its collider stripped.
     /// </summary>
-    static void BuildShield(Transform parent)
+    static void BuildRackShield(Transform parent)
     {
         var shield = new GameObject("Shield");
         shield.transform.SetParent(parent, false);
@@ -972,6 +1020,252 @@ public static class GameSceneBuilder
         handGrab.InjectOptionalPointableElement(grabbable);
 
         shield.AddComponent<Shield>();
+    }
+
+    static void BuildShield(GameObject rig)
+    {
+        if (rig == null)
+            return;
+
+        var leftController = FindByName(rig.transform, "LeftHandAnchor")
+            ?? FindByName(rig.transform, "LeftControllerAnchor")
+            ?? FindByName(rig.transform, "ComprehensiveInteractorsLeft")
+            ?? FindByName(rig.transform, "LeftController");
+        if (leftController == null)
+        {
+            Debug.LogWarning("[GameSceneBuilder] Left hand/controller anchor not found; shield not attached.");
+            return;
+        }
+
+        var shield = new GameObject("Shield");
+        shield.transform.SetParent(leftController, false);
+        shield.transform.localPosition = new Vector3(0f, -0.02f, 0.12f);
+        shield.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        var disc = CreatePrimitive("Shield Disc", PrimitiveType.Cylinder, shield.transform,
+            Vector3.zero, new Vector3(0.5f, 0.03f, 0.5f), s_Shield);
+        var boss = CreatePrimitive("Shield Boss", PrimitiveType.Sphere, shield.transform,
+            Vector3.zero, new Vector3(0.14f, 0.14f, 0.14f), s_Metal);
+
+        Object.DestroyImmediate(disc.GetComponent<Collider>());
+        Object.DestroyImmediate(boss.GetComponent<Collider>());
+
+        shield.AddComponent<Shield>();
+    }
+
+    /// <summary>
+    /// A low table with simple grabbable shapes (cube, sphere, capsule) so the
+    /// player has something to pick up with the controllers or hands. The table
+    /// itself can also be picked up and thrown, and despawns once it lands.
+    /// </summary>
+    static void BuildInteractables(Transform parent)
+    {
+        var root = new GameObject("Interactables");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0f, 0f, 1.4f);
+
+        var table = new GameObject("Table");
+        table.transform.SetParent(root.transform, false);
+        CreatePrimitive("Top", PrimitiveType.Cube, table.transform,
+            new Vector3(0f, 0.72f, 0f), new Vector3(1.25f, 0.06f, 0.5f), s_Wood);
+        for (int i = 0; i < 4; i++)
+        {
+            float x = (i % 2 == 0 ? -1f : 1f) * 0.55f;
+            float z = (i / 2 == 0 ? -1f : 1f) * 0.18f;
+            CreatePrimitive($"Leg_{i}", PrimitiveType.Cylinder, table.transform,
+                new Vector3(x, 0.36f, z), new Vector3(0.05f, 0.36f, 0.05f), s_Trunk);
+        }
+
+        // The table is a kinematic grabbable: it can still be lifted and moved by
+        // hand, but it is not simulated, so it stays put instead of wobbling and
+        // knocking the props onto the floor.
+        AddKinematicGrabbable(table);
+
+        CreateGrabbable("Grab Cube", PrimitiveType.Cube, root.transform,
+            new Vector3(-0.42f, 0.87f, 0f), Vector3.one * 0.16f, s_Metal);
+        CreateGrabbable("Grab Sphere", PrimitiveType.Sphere, root.transform,
+            new Vector3(-0.14f, 0.87f, 0f), Vector3.one * 0.18f, s_Treasure);
+        CreateGrabbable("Grab Capsule", PrimitiveType.Capsule, root.transform,
+            new Vector3(0.14f, 0.87f, 0f), new Vector3(0.14f, 0.18f, 0.14f), s_Shield);
+
+        BuildAxe(root.transform);
+    }
+
+    static GameObject CreateGrabbable(string name, PrimitiveType type, Transform parent, Vector3 localPosition, Vector3 localScale, Material material)
+    {
+        var go = CreatePrimitive(name, type, parent, localPosition, localScale, material);
+        AddThrowable(go, 0.4f, s_LightThrowProfile, despawn: false);
+        return go;
+    }
+
+    /// <summary>
+    /// Imports the Axe model from the Interaction SDK Samples, builds a
+    /// throwable Axe prefab out of it and places an instance on the table.
+    /// </summary>
+    static void BuildAxe(Transform parent)
+    {
+        var prefab = BuildAxePrefab();
+        if (prefab == null)
+            return;
+
+        var axe = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+        axe.name = "Axe";
+        axe.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+        axe.transform.localPosition = new Vector3(0f, 0.8f, 0.17f);
+    }
+
+    static GameObject BuildAxePrefab()
+    {
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(k_AxeModelPath);
+        if (model == null)
+        {
+            Debug.LogError($"[GameSceneBuilder] Axe model not found at {k_AxeModelPath}");
+            return null;
+        }
+
+        var axe = new GameObject("Axe");
+
+        var visuals = (GameObject)Object.Instantiate(model);
+        visuals.name = "Axe Model";
+        visuals.transform.SetParent(axe.transform, false);
+        visuals.transform.localPosition = Vector3.zero;
+        visuals.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        visuals.transform.localScale = Vector3.one * k_AxeModelScale;
+
+        foreach (var renderer in axe.GetComponentsInChildren<Renderer>())
+            renderer.sharedMaterial = s_Axe;
+
+        AddFittedCollider(axe);
+        AddThrowable(axe, 1.2f, s_AxeProfile, despawn: true);
+
+        // Force the axe to always be held by its grip instead of by the blade.
+        AddGripHandle(axe, new Vector3(-0.04f, -0.09f, -0.1f), Quaternion.Euler(-120f, -90f, 0f));
+
+        var prefab = PrefabUtility.SaveAsPrefabAsset(axe, $"{k_PrefabFolder}/Axe.prefab");
+        Object.DestroyImmediate(axe);
+        return prefab;
+    }
+
+    /// <summary>
+    /// Adds a grip transform and makes every grab interactable on
+    /// <paramref name="go"/> use it, so the object is always held by the grip
+    /// instead of wherever the hand happened to touch.
+    /// </summary>
+    static void AddGripHandle(GameObject go, Vector3 localPosition, Quaternion localRotation)
+    {
+        var handle = new GameObject("Grip");
+        handle.transform.SetParent(go.transform, false);
+        handle.transform.localPosition = localPosition;
+        handle.transform.localRotation = localRotation;
+
+        foreach (var grab in go.GetComponentsInChildren<GrabInteractable>(true))
+        {
+            grab.InjectOptionalGrabSource(handle.transform);
+        }
+
+        foreach (var handGrab in go.GetComponentsInChildren<HandGrabInteractable>(true))
+        {
+            var pose = handle.AddComponent<HandGrabPose>();
+            pose.InjectAllHandGrabPose(handGrab.transform);
+            pose.InjectOptionalHandPose(null);
+            handGrab.InjectOptionalHandGrabPoses(new List<HandGrabPose> { pose });
+        }
+    }
+
+    /// <summary>
+    /// Adds a dynamic Rigidbody plus the Interaction SDK grab components and a
+    /// ThrowTuner so the object can be picked up and thrown. When
+    /// <paramref name="despawn"/> is set, the object removes itself a moment
+    /// after it comes to rest on the ground.
+    /// </summary>
+    static void AddThrowable(GameObject go, float mass, ThrowPhysicsProfile profile, bool despawn)
+    {
+        var rigidbody = go.AddComponent<Rigidbody>();
+        rigidbody.mass = mass;
+        rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+        ConfigureGrab(go, rigidbody, profile, despawn);
+    }
+
+    /// <summary>
+    /// Adds a kinematic Rigidbody (no gravity, not simulated) plus the grab
+    /// components, so the object can be picked up and moved but never falls or
+    /// reacts to physics. Ideal for props that should hold other objects still.
+    /// </summary>
+    static void AddKinematicGrabbable(GameObject go)
+    {
+        var rigidbody = go.AddComponent<Rigidbody>();
+        rigidbody.isKinematic = true;
+        rigidbody.useGravity = false;
+
+        ConfigureGrab(go, rigidbody, null, despawn: false);
+    }
+
+    static void ConfigureGrab(GameObject go, Rigidbody rigidbody, ThrowPhysicsProfile profile, bool despawn)
+    {
+        var grabbable = go.AddComponent<Grabbable>();
+        grabbable.InjectOptionalRigidbody(rigidbody);
+
+        var grab = go.AddComponent<GrabInteractable>();
+        grab.InjectRigidbody(rigidbody);
+        grab.InjectOptionalPointableElement(grabbable);
+
+        var handGrab = go.AddComponent<HandGrabInteractable>();
+        handGrab.InjectRigidbody(rigidbody);
+        handGrab.InjectOptionalPointableElement(grabbable);
+
+        if (profile != null)
+        {
+            var tuner = go.AddComponent<ThrowTuner>();
+            tuner.InjectAllThrowTuner(profile, grabbable, rigidbody);
+        }
+
+        if (despawn)
+            go.AddComponent<ThrowableDespawn>();
+    }
+
+    /// <summary>
+    /// Adds a BoxCollider sized to fit every renderer under the object.
+    /// </summary>
+    static void AddFittedCollider(GameObject go)
+    {
+        var renderers = go.GetComponentsInChildren<Renderer>();
+        if (renderers.Length == 0)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] No renderers found on {go.name}; adding a default collider.");
+            go.AddComponent<BoxCollider>().size = Vector3.one * 0.2f;
+            return;
+        }
+
+        var bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+
+        var box = go.AddComponent<BoxCollider>();
+        box.center = go.transform.InverseTransformPoint(bounds.center);
+        box.size = new Vector3(Mathf.Abs(bounds.size.x), Mathf.Abs(bounds.size.y), Mathf.Abs(bounds.size.z));
+    }
+
+    /// <summary>
+    /// A grabbable cylinder that banishes any enemy it touches.
+    /// </summary>
+    static void BuildEnemyBanisher(Transform parent)
+    {
+        var root = new GameObject("Banishing Cylinder");
+        root.transform.SetParent(parent, false);
+        root.transform.localPosition = new Vector3(0.42f, 0.87f, 1.4f);
+
+        var visual = CreatePrimitive("Cylinder", PrimitiveType.Cylinder, root.transform,
+            Vector3.zero, new Vector3(0.15f, 0.22f, 0.15f), s_Moon);
+        Object.DestroyImmediate(visual.GetComponent<Collider>());
+
+        var collider = root.AddComponent<SphereCollider>();
+        collider.radius = 0.16f;
+
+        AddThrowable(root, 0.4f, s_LightThrowProfile, despawn: false);
+
+        root.AddComponent<EnemyBanisher>();
     }
 
     static GameObject CreatePrimitive(string name, PrimitiveType type, Transform parent, Vector3 localPosition, Vector3 localScale, Material material)
@@ -1016,6 +1310,41 @@ public static class GameSceneBuilder
         var path = $"{k_MaterialFolder}/{name}.mat";
         AssetDatabase.CreateAsset(material, path);
         return material;
+    }
+
+    static Material CreateTexturedMaterial(string name, string texturePath)
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var material = new Material(shader) { name = name };
+
+        var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+        if (texture == null)
+            Debug.LogWarning($"[GameSceneBuilder] Texture not found at {texturePath}");
+        else
+        {
+            if (material.HasProperty("_BaseMap"))
+                material.SetTexture("_BaseMap", texture);
+            if (material.HasProperty("_MainTex"))
+                material.SetTexture("_MainTex", texture);
+        }
+
+        var path = $"{k_MaterialFolder}/{name}.mat";
+        AssetDatabase.CreateAsset(material, path);
+        return material;
+    }
+
+    static ThrowPhysicsProfile CreateThrowProfile(string name, System.Action<SerializedObject> configure)
+    {
+        var profile = ScriptableObject.CreateInstance<ThrowPhysicsProfile>();
+        profile.name = name;
+
+        var serialized = new SerializedObject(profile);
+        configure(serialized);
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+
+        var path = $"{k_ProfileFolder}/{name}.asset";
+        AssetDatabase.CreateAsset(profile, path);
+        return profile;
     }
 
     static void Wire(Object target, string propertyName, Object value)

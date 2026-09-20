@@ -104,8 +104,29 @@ public static class QuestProjectSetup
 
     static void ConfigureXr()
     {
+        ConfigureXrForGroup(BuildTargetGroup.Android);
+        ConfigureXrForGroup(BuildTargetGroup.Standalone);
+    }
+
+    /// <summary>
+    /// Batch entry point for the PC (Standalone) OpenXR setup only. XR Plug-in
+    /// Management always initializes the Standalone settings when running in the
+    /// Editor, regardless of the active build target, so this is what lets the
+    /// Meta XR Simulator open during Play mode while the project still ships to
+    /// Android. Run with:
+    ///   Unity.exe -batchmode -nographics -quit -projectPath &lt;proj&gt; -executeMethod QuestProjectSetup.ConfigureSimulatorXr
+    /// </summary>
+    public static void ConfigureSimulatorXr()
+    {
+        ConfigureXrForGroup(BuildTargetGroup.Standalone);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("[QuestProjectSetup] Configured Standalone (Desktop) OpenXR for the Meta XR Simulator.");
+    }
+
+    static void ConfigureXrForGroup(BuildTargetGroup group)
+    {
         var perBt = GetOrCreatePerBuildTarget();
-        var group = BuildTargetGroup.Android;
 
         if (!perBt.HasSettingsForBuildTarget(group))
             perBt.CreateDefaultSettingsForBuildTarget(group);
@@ -119,7 +140,7 @@ public static class QuestProjectSetup
         FeatureHelpers.RefreshFeatures(group);
         var oxr = OpenXRSettings.GetSettingsForBuildTargetGroup(group);
         if (oxr == null)
-            throw new Exception("OpenXRSettings (Android) is null");
+            throw new Exception($"OpenXRSettings ({group}) is null");
 
         var metaQuest = oxr.GetFeature<MetaQuestFeature>();
         if (metaQuest != null)
@@ -132,9 +153,13 @@ public static class QuestProjectSetup
             OpenXRFeatureSetManager.SetFeaturesFromEnabledFeatureSets(group);
         }
 
+        // Controller/hand input profiles. The Meta XR Simulator presents itself as
+        // an Oculus Touch controller, so these must be active on Standalone too,
+        // not just Android, or the rig has no input in Play mode.
         EnableFeature(group, "com.unity.openxr.feature.input.oculustouch");
         EnableFeature(group, "com.unity.openxr.feature.input.metaquestplus");
         EnableFeature(group, "com.meta.openxr.feature.input.oculustouch.proximity");
+        EnableFeature(group, "com.meta.openxr.feature.metaxr");
 
         FeatureHelpers.RefreshFeatures(group);
         EditorUtility.SetDirty(perBt);

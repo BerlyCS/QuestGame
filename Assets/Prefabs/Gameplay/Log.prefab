@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 216970886436304601}
   - component: {fileID: 6866865705413953605}
   - component: {fileID: 449035906915213351}
+  - component: {fileID: 7100247871744192919}
   - component: {fileID: 355561644315247958}
   m_Layer: 0
   m_Name: Log
@@ -231,6 +232,21 @@ MonoBehaviour:
   _movementProvider: {fileID: 0}
   _handAligment: 1
   _handGrabPoses: []
+--- !u!114 &7100247871744192919
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5569117884018972077}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6615de1c333738747abf98f31352e604, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Oculus.Interaction::Oculus.Interaction.Throw.ThrowTuner
+  _profile: {fileID: 11400000, guid: fa72e8250ba3f514390f1b2a188b4865, type: 2}
+  _grabbable: {fileID: 216970886436304601}
+  _rigidbody: {fileID: 4479014070548619398}
 --- !u!114 &355561644315247958
 MonoBehaviour:
   m_ObjectHideFlags: 0
