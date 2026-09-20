@@ -15,7 +15,7 @@ using UnityEngine.Events;
 /// them, taking life through PlayerHealth. The two are told apart on sight.
 /// </summary>
 [DisallowMultipleComponent]
-public class Skeleton : MonoBehaviour
+public class Skeleton : MonoBehaviour, IArrowHittable
 {
     [Header("Stats")]
     [SerializeField] int m_MaxHits = 2;
@@ -245,6 +245,12 @@ public class Skeleton : MonoBehaviour
             return;
 
         Die();
+    }
+
+    /// <summary>A landed arrow counts as one hit (see <see cref="IArrowHittable"/>).</summary>
+    public void Hit(Arrow arrow)
+    {
+        TakeHit(1);
     }
 
     void Die()

@@ -12,7 +12,7 @@ using UnityEngine.Events;
 /// range in the dark.
 /// </summary>
 [DisallowMultipleComponent]
-public class BoneThrower : MonoBehaviour
+public class BoneThrower : MonoBehaviour, IArrowHittable
 {
     [Header("Stats")]
     [SerializeField] int m_MaxHits = 1;
@@ -171,6 +171,12 @@ public class BoneThrower : MonoBehaviour
 
         if (m_Hits <= 0)
             Die();
+    }
+
+    /// <summary>A landed arrow counts as one hit (see <see cref="IArrowHittable"/>).</summary>
+    public void Hit(Arrow arrow)
+    {
+        TakeHit(1);
     }
 
     void Die()
