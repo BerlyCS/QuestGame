@@ -56,6 +56,10 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] float m_SunIntensityDawn = 1.1f;
     [SerializeField] float m_SkyExposureNight = 0.12f;
     [SerializeField] float m_SkyExposureDawn = 1.25f;
+    [Tooltip("Six-sided skybox tint at the start of the night (matches the pack's neutral 0.5 grey).")]
+    [SerializeField] Color m_SkyTintNight = new Color(0.5f, 0.5f, 0.5f);
+    [Tooltip("Six-sided skybox tint at dawn, warming the night's cool sky toward the rising sun.")]
+    [SerializeField] Color m_SkyTintDawn = new Color(1f, 0.72f, 0.5f);
     [SerializeField] Color m_GroundColorNight = new Color(0.01f, 0.01f, 0.02f);
     [SerializeField] Color m_GroundColorDawn = new Color(0.32f, 0.22f, 0.2f);
     [SerializeField] Color m_DawnAmbient = new Color(0.55f, 0.42f, 0.4f);
@@ -128,8 +132,17 @@ public class NightEnvironmentController : MonoBehaviour
 
         if (m_SkyMaterial != null)
         {
-            m_SkyMaterial.SetFloat("_Exposure", Mathf.Lerp(m_SkyExposureNight, m_SkyExposureDawn, dawn) * blackout);
-            m_SkyMaterial.SetColor("_GroundColor", Color.Lerp(m_GroundColorNight, m_GroundColorDawn, dawn));
+            // Property-guarded so the same controller drives both the procedural
+            // skybox (which has _Exposure/_GroundColor) and the six-sided night
+            // skybox from the Day - Night pack (which has _Exposure/_Tint).
+            if (m_SkyMaterial.HasProperty("_Exposure"))
+                m_SkyMaterial.SetFloat("_Exposure", Mathf.Lerp(m_SkyExposureNight, m_SkyExposureDawn, dawn) * blackout);
+
+            if (m_SkyMaterial.HasProperty("_GroundColor"))
+                m_SkyMaterial.SetColor("_GroundColor", Color.Lerp(m_GroundColorNight, m_GroundColorDawn, dawn));
+
+            if (m_SkyMaterial.HasProperty("_Tint"))
+                m_SkyMaterial.SetColor("_Tint", Color.Lerp(m_SkyTintNight, m_SkyTintDawn, dawn));
         }
     }
 }

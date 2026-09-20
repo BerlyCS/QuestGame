@@ -71,7 +71,9 @@ public class LogSpawner : MonoBehaviour
     {
         Vector2 offset = Random.insideUnitCircle * m_PileRadius;
         Vector3 position = m_PileOrigin.position + new Vector3(offset.x, m_DropHeight, offset.y);
-        Quaternion rotation = Quaternion.Euler(90f, Random.Range(0f, 360f), 0f);
+        // The log model is authored lying down, so only a yaw is applied here (the old
+        // primitive cylinder needed a 90° tip-up, which would stand the model on end).
+        Quaternion rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
 
         var instance = Instantiate(m_LogPrefab, position, rotation, m_PileOrigin);
         Track(instance.GetComponent<Log>());

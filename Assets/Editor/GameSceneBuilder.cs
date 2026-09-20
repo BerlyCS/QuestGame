@@ -25,6 +25,17 @@ public static class GameSceneBuilder
     const string k_AxeModelPath = "Assets/Models/Axe/Axe.fbx";
     const string k_AxeTexturePath = "Assets/Models/Axe/AxeTexture.png";
     const float k_AxeModelScale = 20f;
+    const string k_NightSkyMaterialPath = "Assets/Day-Night Skyboxes/Materials/SkyMidnight.mat";
+    const string k_LogModelPath = "Assets/Static Soul Studio/Wood Pack/Built-in/Prefabs/Log_1.prefab";
+    const float k_LogModelLength = 0.7f;
+    const string k_GroundTexturePath = "Assets/TerrainTexturesPackFree/TerrainTextures/GroundDryLeaves01.png";
+    const string k_GroundNormalPath = "Assets/TerrainTexturesPackFree/TerrainTextures/GroundCracked01_N.png";
+    // The pack sizes its terrain layer at one repeat per 4 m; the ground plane is
+    // 60 m across, so this keeps roughly the same texel density.
+    const float k_GroundTextureTiling = 15f;
+    // The pack's albedo is a grey detail map meant to be tinted rather than used as
+    // a full colour; the surface relief comes from the separate normal map.
+    static readonly Color k_GroundTint = new Color(0.45f, 0.6f, 0.3f);
 
     static Material s_Ground;
     static Material s_Wood;
@@ -39,6 +50,7 @@ public static class GameSceneBuilder
     static Material s_Bone;
     static Material s_Moon;
     static Material s_Axe;
+    static Material s_NightSky;
 
     static ThrowPhysicsProfile s_AxeProfile;
     static ThrowPhysicsProfile s_LightThrowProfile;
@@ -88,6 +100,7 @@ public static class GameSceneBuilder
         var night = systems.AddComponent<NightEnvironmentController>();
         Wire(night, "m_Campfire", campfire);
         Wire(night, "m_MoonLight", moonLight);
+        Wire(night, "m_SkyMaterial", s_NightSky);
 
         BuildCampReveal(systems, campfire);
 
@@ -103,6 +116,90 @@ public static class GameSceneBuilder
         Debug.Log($"[GameSceneBuilder] Built {k_ScenePath}");
     }
 
+    /// <summary>
+    /// Non-destructive counterpart to Build(). Applies the night sky, the ground
+    /// texture and the wood-log prefab to the scene that is already open, leaving
+    /// every hand-placed object (trees, props, the generated forest) untouched.
+    /// Use this instead of Build() whenever the scene has manual work in it.
+    /// </summary>
+    [MenuItem("Tools/Game/Apply Assets To Current Scene")]
+    public static void ApplyToCurrentScene()
+    {
+        var scene = EditorSceneManager.GetActiveScene();
+        if (!scene.IsValid() || string.IsNullOrEmpty(scene.path))
+        {
+            Debug.LogError("[GameSceneBuilder] No saved scene is open; nothing to update.");
+            return;
+        }
+
+        EnsureFolders();
+
+        // Night sky.
+        s_NightSky = AssetDatabase.LoadAssetAtPath<Material>(k_NightSkyMaterialPath);
+        if (s_NightSky == null)
+            Debug.LogWarning($"[GameSceneBuilder] Night skybox not found at {k_NightSkyMaterialPath}.");
+        else
+            RenderSettings.skybox = s_NightSky;
+
+        // Every rig camera has to clear to the skybox, or the sky stays hidden
+        // behind the camera's flat background colour.
+        foreach (var camera in Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            camera.clearFlags = CameraClearFlags.Skybox;
+
+        foreach (var controller in Object.FindObjectsByType<NightEnvironmentController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            Wire(controller, "m_SkyMaterial", s_NightSky);
+
+        // Ground texture. The plane spans 10 m before its scale and the pack is
+        // authored at one repeat per 4 m, so derive the tiling from the real size.
+        var groundRenderer = FindGroundRenderer();
+        float tiling = k_GroundTextureTiling;
+        if (groundRenderer != null)
+        {
+            float worldSize = 10f * Mathf.Max(
+                Mathf.Abs(groundRenderer.transform.lossyScale.x),
+                Mathf.Abs(groundRenderer.transform.lossyScale.z));
+            tiling = Mathf.Max(1f, Mathf.Round(worldSize / 4f));
+        }
+        else
+        {
+            Debug.LogWarning("[GameSceneBuilder] No object named 'Ground' found; the ground texture was not applied.");
+        }
+
+        var groundMaterial = LoadOrCreateGroundMaterial(tiling);
+        if (groundRenderer != null)
+            groundRenderer.sharedMaterial = groundMaterial;
+
+        // Wood-log prefab (model + remote pull-to-hand grab). Reuse the existing
+        // throw profile if it's already there, so scene objects pointing at it keep
+        // their reference instead of being orphaned by a fresh asset.
+        s_LightThrowProfile = AssetDatabase.LoadAssetAtPath<ThrowPhysicsProfile>($"{k_ProfileFolder}/LightThrowProfile.asset");
+        if (s_LightThrowProfile == null)
+            CreateThrowProfiles();
+        BuildLogPrefab();
+
+        // Existing instances still carry the old cylinder's 90-degree tip-up; the
+        // wood model is authored lying down, so drop the pitch and keep the yaw.
+        foreach (var log in Object.FindObjectsByType<Log>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            var euler = log.transform.localEulerAngles;
+            log.transform.localRotation = Quaternion.Euler(0f, euler.y, 0f);
+        }
+
+        AssetDatabase.SaveAssets();
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+
+        Debug.Log($"[GameSceneBuilder] Applied sky, ground texture and log model to '{scene.path}'.");
+    }
+
+    static Renderer FindGroundRenderer()
+    {
+        foreach (var renderer in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (renderer.gameObject.name == "Ground")
+                return renderer;
+        return null;
+    }
+
     static void EnsureFolders()
     {
         EnsureFolder("Assets/Scenes");
@@ -116,7 +213,15 @@ public static class GameSceneBuilder
 
     static void ConfigureLighting()
     {
-        RenderSettings.skybox = null;
+        // The night skybox from the "10 Skyboxes Pack : Day - Night" pack. Its
+        // six-sided shader exposes _Exposure/_Tint, which NightEnvironmentController
+        // animates to bring the dawn in; assigned here so the sky renders as soon as
+        // the scene loads rather than starting on the camera's flat background.
+        s_NightSky = AssetDatabase.LoadAssetAtPath<Material>(k_NightSkyMaterialPath);
+        if (s_NightSky == null)
+            Debug.LogWarning($"[GameSceneBuilder] Night skybox not found at {k_NightSkyMaterialPath}; leaving the sky empty.");
+        RenderSettings.skybox = s_NightSky;
+
         RenderSettings.ambientMode = AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.02f, 0.03f, 0.05f);
         RenderSettings.ambientIntensity = 0.12f;
@@ -224,8 +329,9 @@ public static class GameSceneBuilder
         if (camera == null)
             return;
 
-        camera.clearFlags = CameraClearFlags.SolidColor;
-        camera.backgroundColor = new Color(0.005f, 0.006f, 0.012f, 1f);
+        // Render the assigned night skybox instead of a flat near-black background,
+        // otherwise the sky is hidden no matter what RenderSettings.skybox is set to.
+        camera.clearFlags = CameraClearFlags.Skybox;
     }
 
     /// <summary>
@@ -285,7 +391,7 @@ public static class GameSceneBuilder
 
     static void CreateMaterials()
     {
-        s_Ground = CreateMaterial("M_Ground", new Color(0.15f, 0.13f, 0.1f), 0f, 0.05f);
+        s_Ground = CreateGroundMaterial();
         s_Wood = CreateMaterial("M_Wood", new Color(0.18f, 0.11f, 0.06f), 0f, 0.1f);
         s_Stone = CreateMaterial("M_Stone", new Color(0.22f, 0.22f, 0.24f), 0f, 0.1f);
         s_Tent = CreateMaterial("M_Tent", new Color(0.16f, 0.13f, 0.11f), 0f, 0.1f);
@@ -650,7 +756,9 @@ public static class GameSceneBuilder
             int row = i / 3;
             int column = i % 3;
             var log = (GameObject)PrefabUtility.InstantiatePrefab(s_LogPrefab, pile.transform);
-            log.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            // The wood-pack log is already authored lying down (long axis along Z, see
+            // NormalizeModel), so unlike the old cylinder it needs no tip-up rotation.
+            log.transform.localRotation = Quaternion.identity;
             log.transform.localPosition = new Vector3((column - 1) * 0.16f, 0.08f + row * 0.13f, row % 2 == 1 ? 0.06f : 0f);
         }
 
@@ -691,7 +799,7 @@ public static class GameSceneBuilder
         var log = (GameObject)PrefabUtility.InstantiatePrefab(s_LogPrefab, campfireRoot);
         log.name = "Tutorial Log";
         log.transform.localPosition = localPosition;
-        log.transform.localRotation = Quaternion.Euler(90f, yaw, 0f);
+        log.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
     }
 
     /// <summary>
@@ -710,18 +818,83 @@ public static class GameSceneBuilder
 
     static GameObject BuildLogPrefab()
     {
-        var log = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        log.name = "Log";
-        log.transform.localScale = new Vector3(0.14f, 0.35f, 0.14f);
+        var log = new GameObject("Log");
 
-        AddThrowable(log, 0.5f, s_LightThrowProfile, despawn: false);
+        // Visual comes from the "Low Poly Wood Pack" (the plain brown Log_1, not the
+        // rotten/broken variants). The pack isn't authored at the size this game uses,
+        // so the model is normalised to k_LogModelLength and recentred on the root's
+        // pivot, keeping the pile/tutorial/spawner placement numbers meaningful.
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(k_LogModelPath);
+        if (model != null)
+        {
+            var visuals = (GameObject)PrefabUtility.InstantiatePrefab(model);
+            visuals.name = "Log Model";
+            visuals.transform.SetParent(log.transform, false);
+            NormalizeModel(visuals, k_LogModelLength);
+        }
+        else
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Log model not found at {k_LogModelPath}; falling back to a cylinder.");
+            var fallback = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            fallback.name = "Log Model";
+            fallback.transform.SetParent(log.transform, false);
+            fallback.transform.localScale = new Vector3(0.14f, 0.35f, 0.14f);
+            fallback.GetComponent<Renderer>().sharedMaterial = s_Wood;
+            Object.DestroyImmediate(fallback.GetComponent<Collider>());
+        }
+
+        AddFittedCollider(log);
+
+        // Firewood uses the remote pull-to-hand grab so the player can call a log over
+        // to the fire instead of reaching down to the pile.
+        AddThrowable(log, 0.5f, s_LightThrowProfile, despawn: false, allowDistanceGrab: true);
 
         log.AddComponent<Log>();
-        log.GetComponent<Renderer>().sharedMaterial = s_Wood;
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(log, $"{k_PrefabFolder}/Log.prefab");
         Object.DestroyImmediate(log);
         return prefab;
+    }
+
+    /// <summary>
+    /// Uniformly scales a freshly instantiated model so its longest axis matches
+    /// <paramref name="targetLength"/>, then shifts it so its combined renderer bounds
+    /// are centred on its parent's origin. Models in the wood pack vary in size and
+    /// have slightly off-centre pivots, so this keeps every log the same, well-behaved
+    /// size regardless of which mesh was picked.
+    /// </summary>
+    static void NormalizeModel(GameObject model, float targetLength)
+    {
+        var bounds = CombinedBounds(model);
+        if (bounds.size == Vector3.zero)
+            return;
+
+        float longest = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
+        if (longest <= 0.0001f)
+            return;
+
+        model.transform.localScale *= targetLength / longest;
+
+        // Lay the log's long axis along Z so the scene builder can reason about it as
+        // a log (thickness on X/Y), regardless of which axis the mesh was authored on.
+        var aligned = CombinedBounds(model);
+        if (aligned.size.x > aligned.size.z)
+            model.transform.localRotation = Quaternion.Euler(0f, 90f, 0f) * model.transform.localRotation;
+
+        var centre = CombinedBounds(model).center;
+        model.transform.position -= centre - model.transform.parent.position;
+    }
+
+    static Bounds CombinedBounds(GameObject go)
+    {
+        var renderers = go.GetComponentsInChildren<Renderer>();
+        if (renderers.Length == 0)
+            return new Bounds(go.transform.position, Vector3.zero);
+
+        var bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+        return bounds;
     }
 
     static GameObject BuildTent(Transform parent)
@@ -1179,14 +1352,14 @@ public static class GameSceneBuilder
     /// <paramref name="despawn"/> is set, the object removes itself a moment
     /// after it comes to rest on the ground.
     /// </summary>
-    static void AddThrowable(GameObject go, float mass, ThrowPhysicsProfile profile, bool despawn)
+    static void AddThrowable(GameObject go, float mass, ThrowPhysicsProfile profile, bool despawn, bool allowDistanceGrab = false)
     {
         var rigidbody = go.AddComponent<Rigidbody>();
         rigidbody.mass = mass;
         rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
         rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
-        ConfigureGrab(go, rigidbody, profile, despawn);
+        ConfigureGrab(go, rigidbody, profile, despawn, allowDistanceGrab);
     }
 
     /// <summary>
@@ -1203,7 +1376,7 @@ public static class GameSceneBuilder
         ConfigureGrab(go, rigidbody, null, despawn: false);
     }
 
-    static void ConfigureGrab(GameObject go, Rigidbody rigidbody, ThrowPhysicsProfile profile, bool despawn)
+    static void ConfigureGrab(GameObject go, Rigidbody rigidbody, ThrowPhysicsProfile profile, bool despawn, bool allowDistanceGrab = false)
     {
         var grabbable = go.AddComponent<Grabbable>();
         grabbable.InjectOptionalRigidbody(rigidbody);
@@ -1215,6 +1388,22 @@ public static class GameSceneBuilder
         var handGrab = go.AddComponent<HandGrabInteractable>();
         handGrab.InjectRigidbody(rigidbody);
         handGrab.InjectOptionalPointableElement(grabbable);
+
+        // The second of the Interaction SDK's three grab styles: point at the object
+        // and press/grip remotely so it flies into the hand. Both the controller
+        // (DistanceGrabInteractable) and the hand-tracking gesture
+        // (DistanceHandGrabInteractable) variants are added; the rig already carries
+        // the matching DistanceGrabInteractor/DistanceHandGrabInteractor.
+        if (allowDistanceGrab)
+        {
+            var distanceGrab = go.AddComponent<DistanceGrabInteractable>();
+            distanceGrab.InjectRigidbody(rigidbody);
+            distanceGrab.InjectOptionalPointableElement(grabbable);
+
+            var distanceHandGrab = go.AddComponent<DistanceHandGrabInteractable>();
+            distanceHandGrab.InjectRigidbody(rigidbody);
+            distanceHandGrab.InjectOptionalPointableElement(grabbable);
+        }
 
         if (profile != null)
         {
@@ -1332,6 +1521,94 @@ public static class GameSceneBuilder
         var path = $"{k_MaterialFolder}/{name}.mat";
         AssetDatabase.CreateAsset(material, path);
         return material;
+    }
+
+    /// <summary>
+    /// The ground material, textured with the single terrain texture shipped by the
+    /// "Terrain Textures Pack Free" (GroundDryLeaves01). Only that one texture is used
+    /// and its normal map is deliberately skipped, keeping the free pack's memory cost
+    /// down. Falls back to the old flat colour if the texture is missing.
+    /// </summary>
+    static Material CreateGroundMaterial(float textureTiling = k_GroundTextureTiling)
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var material = new Material(shader) { name = "M_Ground" };
+        ApplyGroundTexture(material, textureTiling);
+
+        var path = $"{k_MaterialFolder}/M_Ground.mat";
+        AssetDatabase.CreateAsset(material, path);
+        return material;
+    }
+
+    /// <summary>
+    /// Loads the existing M_Ground material and re-textures it in place, so any scene
+    /// object already pointing at the asset keeps its reference (unlike
+    /// CreateGroundMaterial, which replaces the asset and orphans those links).
+    /// </summary>
+    static Material LoadOrCreateGroundMaterial(float textureTiling)
+    {
+        var path = $"{k_MaterialFolder}/M_Ground.mat";
+        var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+            return CreateGroundMaterial(textureTiling);
+
+        ApplyGroundTexture(material, textureTiling);
+        EditorUtility.SetDirty(material);
+        return material;
+    }
+
+    static void ApplyGroundTexture(Material material, float textureTiling)
+    {
+        var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(k_GroundTexturePath);
+        if (texture == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Ground texture not found at {k_GroundTexturePath}; using a flat colour.");
+            var flat = new Color(0.15f, 0.13f, 0.1f);
+            material.color = flat;
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", flat);
+        }
+        else
+        {
+            var tiling = new Vector2(textureTiling, textureTiling);
+            if (material.HasProperty("_BaseMap"))
+            {
+                material.SetTexture("_BaseMap", texture);
+                material.SetTextureScale("_BaseMap", tiling);
+            }
+            if (material.HasProperty("_MainTex"))
+            {
+                material.SetTexture("_MainTex", texture);
+                material.SetTextureScale("_MainTex", tiling);
+            }
+
+            material.color = k_GroundTint;
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", k_GroundTint);
+        }
+
+        if (material.HasProperty("_Metallic"))
+            material.SetFloat("_Metallic", 0f);
+        if (material.HasProperty("_Smoothness"))
+            material.SetFloat("_Smoothness", 0.05f);
+
+        // The pack ships its ground detail as a separate normal map; without it the
+        // albedo alone reads flat, so both the colour and the normal are applied.
+        var normal = AssetDatabase.LoadAssetAtPath<Texture2D>(k_GroundNormalPath);
+        if (normal != null)
+        {
+            var normalTiling = new Vector2(textureTiling, textureTiling);
+            if (material.HasProperty("_BumpMap"))
+            {
+                material.SetTexture("_BumpMap", normal);
+                material.SetTextureScale("_BumpMap", normalTiling);
+            }
+            material.EnableKeyword("_NORMALMAP");
+        }
+        else
+        {
+            material.DisableKeyword("_NORMALMAP");
+        }
     }
 
     static ThrowPhysicsProfile CreateThrowProfile(string name, System.Action<SerializedObject> configure)
