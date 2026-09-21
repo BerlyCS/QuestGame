@@ -3,9 +3,11 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Owns the ways the night ends. Cero UI (see CLAUDE.md): no text, no Game
-/// Over screen, no buttons - the world goes bright with a calm birdsong on
+/// Owns the ways the night ends. Almost cero UI (see CLAUDE.md): no Game Over
+/// screen and no buttons - the world goes bright with a calm birdsong on
 /// victory, or black with a sinister laugh on defeat, then the scene reloads.
+/// The one exception is the "¡Has ganado!" / "¡Has perdido!" card
+/// (see <see cref="EndGameBanner"/>) so the outcome is unmistakable.
 ///
 /// Victory: survive <see cref="m_SurvivalDuration"/> seconds. Every Caminante
 /// freezes and collapses, the world lights up for
@@ -194,6 +196,7 @@ public class GameManager : MonoBehaviour
             m_ChestRenderer.sharedMaterial = m_TeethMaterial;
 
         Play2DSound(ProceduralSfx.BirdSong);
+        EndGameBanner.Show(true, m_PlayerHealth != null ? m_PlayerHealth.Head : null);
         StartCoroutine(RestartAfter(m_VictoryLitDuration));
     }
 
@@ -209,6 +212,7 @@ public class GameManager : MonoBehaviour
             m_HunterSpawner.enabled = false;
 
         Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
+        EndGameBanner.Show(false, m_PlayerHealth != null ? m_PlayerHealth.Head : null);
         StartCoroutine(FadeToBlackThenRestart());
     }
 
