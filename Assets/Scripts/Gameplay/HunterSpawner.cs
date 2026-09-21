@@ -35,15 +35,15 @@ public class HunterSpawner : MonoBehaviour
 
     [Header("Fire outage (swarm)")]
     [Tooltip("Spawn interval while the campfire is out.")]
-    [SerializeField] float m_SwarmSpawnInterval = 3f;
+    [SerializeField] float m_SwarmSpawnInterval = 1.6f;
     [Tooltip("How many swarm hunters can be alive at once.")]
-    [SerializeField] int m_SwarmMaxAlive = 5;
+    [SerializeField] int m_SwarmMaxAlive = 15;
     [Tooltip("Swarm hunters walk faster than the normal Cazador.")]
-    [SerializeField] float m_SwarmMoveSpeed = 1.1f;
-    [Tooltip("Swarm hunters take more hits before they go down.")]
-    [SerializeField] int m_SwarmHits = 4;
-    [Tooltip("Swarm hunters spawn a little closer to the player.")]
-    [SerializeField] float m_SwarmSpawnDistance = 7f;
+    [SerializeField] float m_SwarmMoveSpeed = 1.5f;
+    [Tooltip("Swarm hunters take more hits before they go down (also the number of axe strikes they survive).")]
+    [SerializeField] int m_SwarmHits = 2;
+    [Tooltip("Swarm hunters spawn closer to the player.")]
+    [SerializeField] float m_SwarmSpawnDistance = 10f;
 
     int m_Spawned;
     int m_Alive;
@@ -120,6 +120,7 @@ public class HunterSpawner : MonoBehaviour
         {
             skeleton.SetMoveSpeed(m_SwarmMoveSpeed);
             skeleton.SetMaxHits(m_SwarmHits);
+            skeleton.SetResistsBanish(true);
         }
         skeleton.OnDied.AddListener(() => m_Alive = Mathf.Max(0, m_Alive - 1));
 

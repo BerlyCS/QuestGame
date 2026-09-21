@@ -8,11 +8,16 @@ using UnityEngine.Events;
 /// player - it has no reference to the player at all, so it can brush past
 /// without reacting, which is the moment that teaches the whole game without
 /// a word (see enemigos.md). Kneels and attacks the fire once close, but
-/// backs off while the fire is strong: the light repels it. Simple
-/// primitive-based presentation with a procedural walk bob so it reads as
-/// "alive". The Cazador is the exception to "enemies ignore the player": a
-/// faster, red-eyed skeleton that walks up to the player's head and claws at
-/// them, taking life through PlayerHealth. The two are told apart on sight.
+/// backs off while the fire is strong: the light repels it. The Cazador is
+/// the exception to "enemies ignore the player": a faster, red-eyed skeleton
+/// that walks up to the player's head and claws at them, taking life through
+/// PlayerHealth. The two are told apart on sight.
+///
+/// Presentation is either the simple primitive bodies built by
+/// GameSceneBuilder (procedural bob/swing, see <see cref="m_Body"/>) or, when
+/// <see cref="m_Animator"/> is assigned, an animated skeleton model driven by
+/// the EnemySkeleton controller. Both paths share the same AI; the procedural
+/// posing is skipped when an Animator is present.
 /// </summary>
 [DisallowMultipleComponent]
 public class Skeleton : MonoBehaviour, IArrowHittable
@@ -40,10 +45,25 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     [Header("References")]
     [SerializeField] CampfireFuel m_Campfire;
+    [SerializeField] Animator m_Animator;
     [SerializeField] Transform m_Body;
     [SerializeField] Transform m_LeftArm;
     [SerializeField] Transform m_RightArm;
     [SerializeField] Renderer[] m_Renderers;
+
+    [Header("Animation")]
+    [Tooltip("Walk speed at which the locomotion blend switches from Walking_A to Running_A. " +
+             "The EnemySkeleton controller blends Idle_A at 0, Walking_A at 0.5 and Running_A at 1.")]
+    [SerializeField] float m_RunSpeedThreshold = 1.3f;
+
+    [Header("Obstacle avoidance")]
+    [Tooltip("Curve around trees, rocks and camp props instead of walking straight through them.")]
+    [SerializeField] bool m_AvoidObstacles = true;
+    [SerializeField] float m_AvoidProbeDistance = 1.2f;
+    [SerializeField] float m_AvoidProbeRadius = 0.35f;
+    [SerializeField] float m_AvoidProbeHeight = 1f;
+    [Range(0f, 1.5f)]
+    [SerializeField] float m_AvoidSteer = 0.9f;
 
     [Header("Feel")]
     [SerializeField] float m_BobAmplitude = 0.06f;
@@ -56,14 +76,26 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     [SerializeField] AudioClip m_DeathSfx;
     [SerializeField, Range(0f, 1f)] float m_DeathSfxVolume = 0.85f;
     [SerializeField] bool m_DeathParticles = true;
+    [Tooltip("How long the death animation is given before the object is removed.")]
+    [SerializeField] float m_DeathAnimDuration = 1.5f;
 
     [Header("Retreat (fire outage)")]
     [Tooltip("How long the skeleton walks away from the dead fire before it disappears.")]
     [SerializeField] float m_RetreatDuration = 2.5f;
     [SerializeField] float m_RetreatSpeed = 1.6f;
 
+    [Header("Axe (banisher)")]
+    [Tooltip("When true the axe is no longer an instant kill: each strike is a normal hit instead.")]
+    [SerializeField] bool m_ResistsBanish;
+
     [Header("Events")]
     [SerializeField] UnityEvent m_OnDied = new UnityEvent();
+
+    // Animator parameter names, shared with the EnemySkeleton controller.
+    static readonly int k_SpeedHash = Animator.StringToHash("Speed");
+    static readonly int k_AttackHash = Animator.StringToHash("Attack");
+    static readonly int k_HitHash = Animator.StringToHash("Hit");
+    static readonly int k_DeathHash = Animator.StringToHash("Death");
 
     int m_Hits;
     float m_BobPhase;
@@ -105,6 +137,9 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     /// <summary>Overrides the walk speed so the fire-outage swarm can be faster.</summary>
     public void SetMoveSpeed(float speed) => m_MoveSpeed = speed;
+
+    /// <summary>Makes the axe deal a normal hit instead of an instant kill (the fire-outage swarm).</summary>
+    public void SetResistsBanish(bool value) => m_ResistsBanish = value;
 
     /// <summary>
     /// Kills this skeleton as a real combat kill (death SFX + particles + OnDied).
@@ -170,6 +205,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
                 // The fire's own fuel-driven visuals (flame size, light, crackle pitch)
                 // already shrink and hiss as fuel drops - no separate effect needed here.
                 m_Campfire.AddFuel(-m_AttackFuelDrain);
+                if (m_Animator != null)
+                    m_Animator.SetTrigger(k_AttackHash);
             }
         }
 
@@ -198,6 +235,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             {
                 m_NextAttackTime = Time.time + m_PlayerAttackInterval;
                 m_Player.TakeDamage(m_PlayerDamage);
+                if (m_Animator != null)
+                    m_Animator.SetTrigger(k_AttackHash);
             }
         }
 
@@ -207,6 +246,12 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     /// <summary>Arms raised and raking forward: reads as an attack, not the fire-kneel.</summary>
     void AnimateClaw()
     {
+        if (m_Animator != null)
+        {
+            m_Animator.SetFloat(k_SpeedHash, 0f);
+            return;
+        }
+
         float swipe = Mathf.Sin(Time.time * 12f) * 25f;
         if (m_Body != null)
             m_Body.localPosition = m_BodyBasePosition;
@@ -231,13 +276,53 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             return;
 
         direction.Normalize();
+        direction = SteerAroundObstacles(direction);
         Quaternion look = Quaternion.LookRotation(direction, Vector3.up);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, look, m_TurnSpeed * Time.deltaTime);
         transform.position += direction * (m_MoveSpeed * Time.deltaTime);
     }
 
+    /// <summary>
+    /// Nudges the walk direction sideways when a tree, rock or camp prop is
+    /// directly ahead, so the skeleton curves around it instead of walking
+    /// through it and looking stuck. The campfire, the player and the other
+    /// enemies are ignored - those are what it is walking toward, not
+    /// obstacles.
+    /// </summary>
+    Vector3 SteerAroundObstacles(Vector3 direction)
+    {
+        if (!m_AvoidObstacles)
+            return direction;
+
+        Vector3 origin = transform.position + Vector3.up * m_AvoidProbeHeight;
+        if (!Physics.SphereCast(origin, m_AvoidProbeRadius, direction, out RaycastHit hit,
+                m_AvoidProbeDistance, ~0, QueryTriggerInteraction.Ignore))
+            return direction;
+
+        var other = hit.collider;
+        if (other.GetComponentInParent<Skeleton>() != null
+            || other.GetComponentInParent<BoneThrower>() != null
+            || other.GetComponentInParent<CampfireFuel>() != null
+            || other.GetComponentInParent<PlayerHealth>() != null)
+            return direction;
+
+        // Hug the side of the obstacle the probe normal is *not* pointing at.
+        Vector3 side = Vector3.Cross(Vector3.up, direction).normalized;
+        float sign = Vector3.Dot(side, hit.normal) > 0f ? -1f : 1f;
+        return (direction + side * (sign * m_AvoidSteer)).normalized;
+    }
+
     void AnimateWalk()
     {
+        if (m_Animator != null)
+        {
+            // The controller blends Idle_A at 0, Walking_A at 0.5 and Running_A
+            // at 1, so snap to a whole clip instead of sitting between two
+            // cycles (blending two step timings together slid the feet).
+            m_Animator.SetFloat(k_SpeedHash, m_MoveSpeed >= m_RunSpeedThreshold ? 1f : 0.5f);
+            return;
+        }
+
         m_BobPhase += Time.deltaTime * m_BobFrequency;
         float sine = Mathf.Sin(m_BobPhase);
         float bob = Mathf.Abs(sine) * m_BobAmplitude;
@@ -254,6 +339,12 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     /// <summary>Kneeling, arms reaching into the fire - visually distinct from walking.</summary>
     void AnimateKneel()
     {
+        if (m_Animator != null)
+        {
+            m_Animator.SetFloat(k_SpeedHash, 0f);
+            return;
+        }
+
         if (m_Body != null)
             m_Body.localPosition = m_BodyBasePosition + new Vector3(0f, -m_KneelDropAmount, 0f);
 
@@ -270,6 +361,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
         m_Hits -= amount;
         m_HitFlashUntil = Time.time + 0.12f;
+        if (m_Animator != null)
+            m_Animator.SetTrigger(k_HitHash);
 
         if (m_Hits <= 0)
             Die();
@@ -284,6 +377,14 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     {
         if (!IsAlive)
             return;
+
+        // The fire-outage swarm shrugs off the axe: each touch is one normal
+        // hit rather than an instant kill, so it takes two clean swings.
+        if (m_ResistsBanish)
+        {
+            TakeHit(1);
+            return;
+        }
 
         Die();
     }
@@ -334,9 +435,23 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     void Die()
     {
         m_Hits = 0;
-        SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume, m_DeathParticles);
+
+        // With an Animator the model plays the death out, so the particle burst
+        // is skipped and the object is left in place long enough to be seen.
+        bool animated = m_Animator != null;
+        SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume,
+            m_DeathParticles && !animated);
         m_OnDied.Invoke();
-        Destroy(gameObject);
+
+        if (animated)
+        {
+            m_Animator.SetTrigger(k_DeathHash);
+            Destroy(gameObject, m_DeathAnimDuration);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
     }
 
     /// <summary>
@@ -378,6 +493,9 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     void CacheColors()
     {
+        if (m_Animator != null)
+            return;
+
         if (m_Renderers == null || m_Renderers.Length == 0)
             m_Renderers = GetComponentsInChildren<Renderer>();
 
@@ -388,6 +506,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     void UpdateHitFlash()
     {
+        // The animated model shows the hit with the Hit_A clip instead.
+        if (m_Animator != null)
+            return;
+
         bool flash = Time.time < m_HitFlashUntil;
         for (int i = 0; i < m_Renderers.Length; i++)
         {

@@ -261,7 +261,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7424d858363c84d3d8db1e673d51ab8a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GrabHighlight
-  m_GlowMaterial: {fileID: 0}
+  m_GlowMaterial: {fileID: 2100000, guid: 0daabcd3e8aa34567a97f5d424e77928, type: 2}
   m_HoverColor: {r: 1, g: 0.7, b: 0.2, a: 1}
   m_HeldColor: {r: 1, g: 0.95, b: 0.65, a: 1}
   m_HaloThickness: 0.025

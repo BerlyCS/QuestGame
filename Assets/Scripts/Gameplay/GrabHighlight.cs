@@ -35,6 +35,12 @@ public class GrabHighlight : MonoBehaviour
     bool m_WasHovered;
     bool m_WasHeld;
 
+    /// <summary>
+    /// Scene-builder hook: these fields have no Interaction SDK injection point, so
+    /// GameSceneBuilder calls this to hand over the halo material.
+    /// </summary>
+    public void InjectGlowMaterial(Material glowMaterial) => m_GlowMaterial = glowMaterial;
+
     void Awake()
     {
         m_Grabbable = GetComponent<Grabbable>();

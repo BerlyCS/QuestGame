@@ -44,6 +44,10 @@ public class GameManager : MonoBehaviour
         "Falls back to the procedural laugh when empty.")]
     [SerializeField] AudioClip m_LaughSfx;
 
+    [Header("Opening")]
+    [Tooltip("Wolf howl played once when the night's scene loads.")]
+    [SerializeField] AudioClip m_IntroSfx;
+
     [Header("Ending twist (see DISEÑO.md 1.3)")]
     [SerializeField] Renderer m_ChestRenderer;
     [SerializeField] Material m_TeethMaterial;
@@ -78,13 +82,19 @@ public class GameManager : MonoBehaviour
             m_PlayerHealth.OnDied.RemoveListener(HandlePlayerDied);
     }
 
+    void Start()
+    {
+        // The wolf howl sets the mood the instant the night begins.
+        if (m_IntroSfx != null)
+            Play2DSound(m_IntroSfx);
+    }
+
     void Update()
     {
         // The clock pauses while the fire is out (see HandleExtinguished): the
         // player cannot outlast the darkness, they have to relight the fire.
         if (m_GameOver || m_FireOut)
             return;
-
         m_Elapsed += Time.deltaTime;
         if (m_Elapsed >= m_SurvivalDuration)
             Win();
@@ -107,7 +117,7 @@ public class GameManager : MonoBehaviour
             return;
 
         m_FireOut = true;
-        PlayEndSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
+        Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
 
         // The Caminantes and Lanzahuesos walk off and vanish; only the red
         // swarm is left hunting the player.
@@ -183,7 +193,7 @@ public class GameManager : MonoBehaviour
         if (m_ChestRenderer != null && m_TeethMaterial != null)
             m_ChestRenderer.sharedMaterial = m_TeethMaterial;
 
-        PlayEndSound(ProceduralSfx.BirdSong);
+        Play2DSound(ProceduralSfx.BirdSong);
         StartCoroutine(RestartAfter(m_VictoryLitDuration));
     }
 
@@ -198,11 +208,11 @@ public class GameManager : MonoBehaviour
         if (m_HunterSpawner != null)
             m_HunterSpawner.enabled = false;
 
-        PlayEndSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
+        Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
         StartCoroutine(FadeToBlackThenRestart());
     }
 
-    void PlayEndSound(AudioClip clip)
+    void Play2DSound(AudioClip clip)
     {
         var source = gameObject.AddComponent<AudioSource>();
         source.spatialBlend = 0f;

@@ -6,6 +6,7 @@ using Oculus.Interaction.HandGrab;
 using Oculus.Interaction.Input;
 using Oculus.Interaction.Throw;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -27,6 +28,18 @@ public static class GameSceneBuilder
     const string k_AxeTexturePath = "Assets/Models/Axe/AxeTexture.png";
     const float k_AxeModelScale = 20f;
     const string k_DeathSfxPath = "Assets/Audio/Enemies/lego-breaking.mp3";
+    // Animated enemy models (the Quaternius rigs that ship with the skeleton
+    // pack) and the shared controller that drives all of them. The rig is
+    // Generic with no Avatar, so the clips retarget purely by transform path.
+    const string k_EnemyModelFolder = "Assets/Models/Skeletons";
+    const string k_EnemyControllerPath = "Assets/Animations/EnemySkeleton.controller";
+    const string k_HunterSkeletonMaterialPath = "Assets/Materials/Game/M_HunterSkeleton.mat";
+    const float k_CaminanteHeight = 2.05f;
+    const float k_CazadorHeight = 2.15f;
+    const float k_BoneThrowerHeight = 2.1f;
+    // Narrower than tall so the enemies read as stretched and gaunt next to the
+    // player rather than stocky.
+    const float k_EnemyWidthFactor = 0.85f;
     const string k_NightSkyMaterialPath = "Assets/Day-Night Skyboxes/Materials/SkyMidnight.mat";
     const string k_LogModelPath = "Assets/Static Soul Studio/Wood Pack/Built-in/Prefabs/Log_1.prefab";
     const float k_LogModelLength = 0.7f;
@@ -853,6 +866,14 @@ public static class GameSceneBuilder
 
         log.AddComponent<Log>();
 
+        // Log requires GrabHighlight, but its halo material has no Interaction SDK
+        // injection point, so it must be handed over explicitly or the log never glows.
+        var highlight = log.GetComponent<GrabHighlight>();
+        if (highlight == null)
+            highlight = log.AddComponent<GrabHighlight>();
+        highlight.InjectGlowMaterial(
+            AssetDatabase.LoadAssetAtPath<Material>($"{k_MaterialFolder}/M_GrabGlow.mat"));
+
         var prefab = PrefabUtility.SaveAsPrefabAsset(log, $"{k_PrefabFolder}/Log.prefab");
         Object.DestroyImmediate(log);
         return prefab;
@@ -965,49 +986,16 @@ public static class GameSceneBuilder
         return props.gameObject;
     }
 
-    static GameObject BuildSkeletonPrefab()
+    public static GameObject BuildSkeletonPrefab()
     {
         var root = new GameObject("Skeleton");
         var skeleton = root.AddComponent<Skeleton>();
 
-        var body = new GameObject("Body");
-        body.transform.SetParent(root.transform, false);
-
-        CreatePrimitive("Skull", PrimitiveType.Sphere, body.transform,
-            new Vector3(0f, 1.62f, 0f), new Vector3(0.24f, 0.24f, 0.24f), s_Bone);
-        CreatePrimitive("Jaw", PrimitiveType.Cube, body.transform,
-            new Vector3(0f, 1.52f, 0.04f), new Vector3(0.16f, 0.06f, 0.14f), s_Bone);
-        CreatePrimitive("Spine", PrimitiveType.Cylinder, body.transform,
-            new Vector3(0f, 1.2f, 0f), new Vector3(0.08f, 0.22f, 0.08f), s_Bone);
-
-        for (int i = 0; i < 3; i++)
-            CreatePrimitive($"Rib_{i}", PrimitiveType.Cube, body.transform,
-                new Vector3(0f, 1.32f - i * 0.11f, 0f),
-                new Vector3(0.34f - i * 0.03f, 0.035f, 0.2f), s_Bone);
-
-        CreatePrimitive("Pelvis", PrimitiveType.Cube, body.transform,
-            new Vector3(0f, 0.92f, 0f), new Vector3(0.3f, 0.14f, 0.18f), s_Bone);
-
-        var leftArm = new GameObject("Left Arm");
-        leftArm.transform.SetParent(body.transform, false);
-        leftArm.transform.localPosition = new Vector3(0.24f, 1.35f, 0f);
-        CreatePrimitive("Upper", PrimitiveType.Capsule, leftArm.transform,
-            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), s_Bone);
-
-        var rightArm = new GameObject("Right Arm");
-        rightArm.transform.SetParent(body.transform, false);
-        rightArm.transform.localPosition = new Vector3(-0.24f, 1.35f, 0f);
-        CreatePrimitive("Upper", PrimitiveType.Capsule, rightArm.transform,
-            new Vector3(0f, -0.28f, 0f), new Vector3(0.07f, 0.28f, 0.07f), s_Bone);
-
-        CreatePrimitive("Left Leg", PrimitiveType.Capsule, body.transform,
-            new Vector3(0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), s_Bone);
-        CreatePrimitive("Right Leg", PrimitiveType.Capsule, body.transform,
-            new Vector3(-0.1f, 0.45f, 0f), new Vector3(0.08f, 0.4f, 0.08f), s_Bone);
+        var model = AttachSkeletonModel(root, "Skeleton_Warrior", k_CaminanteHeight, k_EnemyWidthFactor, null, null);
 
         var capsule = root.AddComponent<CapsuleCollider>();
-        capsule.center = new Vector3(0f, 0.9f, 0f);
-        capsule.height = 1.8f;
+        capsule.center = new Vector3(0f, k_CaminanteHeight * 0.5f, 0f);
+        capsule.height = k_CaminanteHeight;
         capsule.radius = 0.3f;
 
         var rigidbody = root.AddComponent<Rigidbody>();
@@ -1018,23 +1006,75 @@ public static class GameSceneBuilder
             if (collider != capsule)
                 Object.DestroyImmediate(collider);
 
-        var renderers = root.GetComponentsInChildren<Renderer>();
-
-        Wire(skeleton, "m_Body", body.transform);
-        Wire(skeleton, "m_LeftArm", leftArm.transform);
-        Wire(skeleton, "m_RightArm", rightArm.transform);
-        Wire(skeleton, "m_DeathSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_DeathSfxPath));
-
         var serialized = new SerializedObject(skeleton);
-        var rendererArray = serialized.FindProperty("m_Renderers");
-        rendererArray.arraySize = renderers.Length;
-        for (int i = 0; i < renderers.Length; i++)
-            rendererArray.GetArrayElementAtIndex(i).objectReferenceValue = renderers[i];
+        serialized.FindProperty("m_Animator").objectReferenceValue = model != null ? model.GetComponent<Animator>() : null;
+        serialized.FindProperty("m_DeathSfx").objectReferenceValue = AssetDatabase.LoadAssetAtPath<AudioClip>(k_DeathSfxPath);
         serialized.ApplyModifiedPropertiesWithoutUndo();
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(root, $"{k_PrefabFolder}/Skeleton.prefab");
         Object.DestroyImmediate(root);
         return prefab;
+    }
+
+    /// <summary>
+    /// Drops one of the animated skeleton models onto an enemy root and adds the
+    /// Animator that drives it. The model is Generic (no Avatar) and shares the
+    /// Rig_Medium skeleton with every clip in EnemySkeleton.controller, so the
+    /// clips retarget purely by transform path. It is scaled to
+    /// <paramref name="targetHeight"/> with its feet on the root's origin, and
+    /// narrowed by <paramref name="widthFactor"/> so the enemies read as tall and
+    /// gaunt rather than stocky. Returns the model root.
+    /// </summary>
+    public static GameObject AttachSkeletonModel(GameObject root, string modelName, float targetHeight,
+        float widthFactor, Material bodyMaterial, Material eyeMaterial)
+    {
+        var asset = AssetDatabase.LoadAssetAtPath<GameObject>($"{k_EnemyModelFolder}/{modelName}.fbx");
+        if (asset == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Missing enemy model {modelName}.fbx - {root.name} will have no body.");
+            return null;
+        }
+
+        var model = (GameObject)PrefabUtility.InstantiatePrefab(asset, root.transform);
+        model.name = "Model";
+        model.transform.localRotation = Quaternion.identity;
+
+        // Measure the bind pose first, then scale so the model stands exactly
+        // targetHeight tall with its feet on the root's origin.
+        float bindHeight = MeasureRendererBounds(model).size.y;
+        float vertical = bindHeight > 0.01f ? targetHeight / bindHeight : 1f;
+        model.transform.localScale = new Vector3(vertical * widthFactor, vertical, vertical * widthFactor);
+
+        var bounds = MeasureRendererBounds(model);
+        model.transform.localPosition = new Vector3(0f, -bounds.min.y, 0f);
+
+        var animator = model.AddComponent<Animator>();
+        animator.runtimeAnimatorController = AssetDatabase.LoadAssetAtPath<AnimatorController>(k_EnemyControllerPath);
+        animator.applyRootMotion = false;
+        animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+
+        if (bodyMaterial != null)
+        {
+            foreach (var renderer in model.GetComponentsInChildren<Renderer>())
+            {
+                bool glow = renderer.sharedMaterial != null && renderer.sharedMaterial.name == "Glow";
+                renderer.sharedMaterial = glow && eyeMaterial != null ? eyeMaterial : bodyMaterial;
+            }
+        }
+
+        return model;
+    }
+
+    static Bounds MeasureRendererBounds(GameObject root)
+    {
+        var renderers = root.GetComponentsInChildren<Renderer>();
+        if (renderers.Length == 0)
+            return new Bounds(root.transform.position, Vector3.zero);
+
+        var bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+        return bounds;
     }
 
     static void BuildSkeletonSpawner(GameObject systems, GameObject rig, CampfireFuel campfire)

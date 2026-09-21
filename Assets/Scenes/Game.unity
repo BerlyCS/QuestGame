@@ -56350,6 +56350,7 @@ MonoBehaviour:
   m_DefeatFadeDuration: 1.5
   m_DefeatRestartDelay: 5
   m_LaughSfx: {fileID: 8300000, guid: b7f3c1a94e2d4f6b8a0c1d2e3f4a5b6c, type: 3}
+  m_IntroSfx: {fileID: 8300000, guid: c4d8e2f16a7b4c3d9e0f1a2b3c4d5e6f, type: 3}
   m_ChestRenderer: {fileID: 0}
   m_TeethMaterial: {fileID: 2100000, guid: 8f7669bdbe59d411981fa7bb9f96487a, type: 2}
 --- !u!4 &759823766

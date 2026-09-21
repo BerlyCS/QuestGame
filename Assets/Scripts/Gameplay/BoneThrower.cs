@@ -10,6 +10,11 @@ using UnityEngine.Events;
 /// impact drains fuel. Same rule as Skeleton: no reference to the player at
 /// all, only to the campfire. Glows brighter than a Caminante so it reads at
 /// range in the dark.
+///
+/// Presentation is either the simple primitive body built by hand (procedural
+/// bob/arm swing) or, when <see cref="m_Animator"/> is assigned, one of the
+/// animated skeleton models driven by the EnemySkeleton controller. The
+/// procedural posing is skipped when an Animator is present.
 /// </summary>
 [DisallowMultipleComponent]
 public class BoneThrower : MonoBehaviour, IArrowHittable
@@ -30,10 +35,25 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
     [Header("References")]
     [SerializeField] CampfireFuel m_Campfire;
+    [SerializeField] Animator m_Animator;
     [SerializeField] Transform m_Body;
     [SerializeField] Transform m_LeftArm;
     [SerializeField] Transform m_RightArm;
     [SerializeField] Renderer[] m_Renderers;
+
+    [Header("Animation")]
+    [Tooltip("Walk speed at which the locomotion blend switches from Walking_A to Running_A. " +
+             "The EnemySkeleton controller blends Idle_A at 0, Walking_A at 0.5 and Running_A at 1.")]
+    [SerializeField] float m_RunSpeedThreshold = 1.3f;
+
+    [Header("Obstacle avoidance")]
+    [Tooltip("Curve around trees, rocks and camp props instead of walking straight through them.")]
+    [SerializeField] bool m_AvoidObstacles = true;
+    [SerializeField] float m_AvoidProbeDistance = 1.2f;
+    [SerializeField] float m_AvoidProbeRadius = 0.35f;
+    [SerializeField] float m_AvoidProbeHeight = 1f;
+    [Range(0f, 1.5f)]
+    [SerializeField] float m_AvoidSteer = 0.9f;
 
     [Header("Feel")]
     [SerializeField] float m_BobAmplitude = 0.06f;
@@ -45,6 +65,8 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     [SerializeField] AudioClip m_DeathSfx;
     [SerializeField, Range(0f, 1f)] float m_DeathSfxVolume = 0.85f;
     [SerializeField] bool m_DeathParticles = true;
+    [Tooltip("How long the death animation is given before the object is removed.")]
+    [SerializeField] float m_DeathAnimDuration = 1.5f;
 
     [Header("Retreat (fire outage)")]
     [Tooltip("How long the Lanzahuesos walks away from the dead fire before it disappears.")]
@@ -53,6 +75,12 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
     [Header("Events")]
     [SerializeField] UnityEvent m_OnDied = new UnityEvent();
+
+    // Animator parameter names, shared with the EnemySkeleton controller.
+    static readonly int k_SpeedHash = Animator.StringToHash("Speed");
+    static readonly int k_AttackHash = Animator.StringToHash("Attack");
+    static readonly int k_HitHash = Animator.StringToHash("Hit");
+    static readonly int k_DeathHash = Animator.StringToHash("Death");
 
     int m_Hits;
     float m_BobPhase;
@@ -118,6 +146,8 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
             {
                 m_NextThrowTime = Time.time + m_ThrowInterval;
                 m_ThrowWindupUntil = Time.time + 0.3f;
+                if (m_Animator != null)
+                    m_Animator.SetTrigger(k_AttackHash);
                 ThrowBone(campfirePosition);
             }
         }
@@ -131,8 +161,39 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
             return;
 
         direction.Normalize();
+        direction = SteerAroundObstacles(direction);
         FaceToward(direction);
         transform.position += direction * (m_MoveSpeed * Time.deltaTime);
+    }
+
+    /// <summary>
+    /// Nudges the walk direction sideways when a tree, rock or camp prop is
+    /// directly ahead, so the Lanzahuesos curves around it instead of walking
+    /// through it and looking stuck. The campfire, the player and the other
+    /// enemies are ignored - those are what it is walking toward, not
+    /// obstacles.
+    /// </summary>
+    Vector3 SteerAroundObstacles(Vector3 direction)
+    {
+        if (!m_AvoidObstacles)
+            return direction;
+
+        Vector3 origin = transform.position + Vector3.up * m_AvoidProbeHeight;
+        if (!Physics.SphereCast(origin, m_AvoidProbeRadius, direction, out RaycastHit hit,
+                m_AvoidProbeDistance, ~0, QueryTriggerInteraction.Ignore))
+            return direction;
+
+        var other = hit.collider;
+        if (other.GetComponentInParent<Skeleton>() != null
+            || other.GetComponentInParent<BoneThrower>() != null
+            || other.GetComponentInParent<CampfireFuel>() != null
+            || other.GetComponentInParent<PlayerHealth>() != null)
+            return direction;
+
+        // Hug the side of the obstacle the probe normal is *not* pointing at.
+        Vector3 side = Vector3.Cross(Vector3.up, direction).normalized;
+        float sign = Vector3.Dot(side, hit.normal) > 0f ? -1f : 1f;
+        return (direction + side * (sign * m_AvoidSteer)).normalized;
     }
 
     void FaceToward(Vector3 direction)
@@ -146,6 +207,15 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
     void AnimateWalk()
     {
+        if (m_Animator != null)
+        {
+            // The controller blends Idle_A at 0, Walking_A at 0.5 and Running_A
+            // at 1, so snap to a whole clip instead of sitting between two
+            // cycles (blending two step timings together slid the feet).
+            m_Animator.SetFloat(k_SpeedHash, m_MoveSpeed >= m_RunSpeedThreshold ? 1f : 0.5f);
+            return;
+        }
+
         m_BobPhase += Time.deltaTime * m_BobFrequency;
         float bob = Mathf.Abs(Mathf.Sin(m_BobPhase)) * m_BobAmplitude;
         if (m_Body != null)
@@ -161,6 +231,12 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     /// <summary>Standing still with the throwing arm raised in a brief windup before each lob.</summary>
     void AnimateThrowIdle()
     {
+        if (m_Animator != null)
+        {
+            m_Animator.SetFloat(k_SpeedHash, 0f);
+            return;
+        }
+
         if (m_Body != null)
             m_Body.localPosition = m_BodyBasePosition;
 
@@ -190,6 +266,8 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
         m_Hits -= amount;
         m_HitFlashUntil = Time.time + 0.12f;
+        if (m_Animator != null)
+            m_Animator.SetTrigger(k_HitHash);
 
         if (m_Hits <= 0)
             Die();
@@ -204,9 +282,23 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     void Die()
     {
         m_Hits = 0;
-        SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume, m_DeathParticles);
+
+        // With an Animator the model plays the death out, so the particle burst
+        // is skipped and the object is left in place long enough to be seen.
+        bool animated = m_Animator != null;
+        SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume,
+            m_DeathParticles && !animated);
         m_OnDied.Invoke();
-        Destroy(gameObject);
+
+        if (animated)
+        {
+            m_Animator.SetTrigger(k_DeathHash);
+            Destroy(gameObject, m_DeathAnimDuration);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
     }
 
     /// <summary>
@@ -280,6 +372,9 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
     void CacheColors()
     {
+        if (m_Animator != null)
+            return;
+
         if (m_Renderers == null || m_Renderers.Length == 0)
             m_Renderers = GetComponentsInChildren<Renderer>();
 
@@ -290,6 +385,10 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
     void UpdateHitFlash()
     {
+        // The animated model shows the hit with the Hit_A clip instead.
+        if (m_Animator != null)
+            return;
+
         bool flash = Time.time < m_HitFlashUntil;
         for (int i = 0; i < m_Renderers.Length; i++)
         {
