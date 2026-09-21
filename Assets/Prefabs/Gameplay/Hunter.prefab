@@ -1271,6 +1271,9 @@ MonoBehaviour:
   m_ArmSwing: 35
   m_KneelDropAmount: 0.3
   m_HitFlashColor: {r: 1, g: 0.25, b: 0.2, a: 1}
+  m_DeathSfx: {fileID: 8300000, guid: 684a8d8b306b477f87be61ff629532de, type: 3}
+  m_DeathSfxVolume: 0.85
+  m_DeathParticles: 1
   m_OnDied:
     m_PersistentCalls:
       m_Calls: []
