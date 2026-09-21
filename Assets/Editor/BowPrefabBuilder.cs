@@ -222,13 +222,17 @@ public static class BowPrefabBuilder
             }
         }
 
-        // Grabbing a handle-like prop with a pinch anchors to the interactor's
-        // pinch point (between thumb and index) instead of the palm point the
-        // grip pose describes, so the bow would land in one of two spots
-        // depending on the gesture. Support palm grabs only.
+        // The frame is held with the whole hand; the string is drawn with a
+        // pinch. Each interactable is restricted to a single gesture so the two
+        // do not fight: a pinch near the frame will not grab the bow, and a fist
+        // near the string will not grab the string instead of the frame. This
+        // also keeps a pinch on the string from anchoring to the palm pose.
+        HandGrabInteractable drawHandGrab = drawGrip.GetComponentInChildren<HandGrabInteractable>(true);
         foreach (HandGrabInteractable handGrab in root.GetComponentsInChildren<HandGrabInteractable>(true))
         {
-            handGrab.InjectSupportedGrabTypes(GrabTypeFlags.Palm);
+            handGrab.InjectSupportedGrabTypes(handGrab == drawHandGrab
+                ? GrabTypeFlags.Pinch
+                : GrabTypeFlags.Palm);
         }
 
         Bow bow = root.AddComponent<Bow>();
