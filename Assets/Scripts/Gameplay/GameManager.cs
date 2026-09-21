@@ -58,6 +58,9 @@ public class GameManager : MonoBehaviour
     [SerializeField] bool m_WaitForStart = true;
     [Tooltip("Wolf howl played once when the night begins.")]
     [SerializeField] AudioClip m_IntroSfx;
+    [Tooltip("Night sting played once when the night begins, right after the howl. " +
+             "A one-shot, so it only ever plays when the prologue gate is shot.")]
+    [SerializeField] AudioClip m_NightSfx;
 
     [Header("Ending twist (see DISEÑO.md 1.3)")]
     [SerializeField] Renderer m_ChestRenderer;
@@ -129,8 +132,23 @@ public class GameManager : MonoBehaviour
             return;
         m_Started = true;
 
+        var campAnchor = m_Campfire != null ? m_Campfire.transform : transform;
+
         if (m_IntroSfx != null)
-            Play2DSound(m_IntroSfx);
+        {
+            // Positional, not 2D: every other cue in the camp is spatialised, and a
+            // howl that comes from the treeline reads better than one inside the
+            // player's head.
+            ProceduralSfx.PlayAt(m_IntroSfx, campAnchor.position + Vector3.up * 1.5f, 1f, 1f);
+        }
+        else
+        {
+            Debug.LogWarning("[GameManager] No intro sfx assigned; the night starts silently.", this);
+        }
+
+        // The night sting: only ever heard on the shot that starts the night.
+        if (m_NightSfx != null)
+            ProceduralSfx.PlayAt(m_NightSfx, campAnchor.position + Vector3.up * 1.5f, 1f, 1f);
 
         SetCampfireBurning(true);
         SetSpawnersRunning(true);

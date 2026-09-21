@@ -1110,6 +1110,8 @@ public static class GameSceneBuilder
     const float k_StartTargetHeight = 1.15f;
     const string k_StartMessage = "INICIAR JUEGO";
     const string k_TeethMaterialPath = "Assets/Materials/Game/M_Teeth.mat";
+    const string k_HowlPath = "Assets/Audio/Ambience/howl_wolf.mp3";
+    const string k_NightPath = "Assets/Audio/Ambience/night.mp3";
 
     /// <summary>
     /// Builds the ceremonial first shot and the treasure it pays for: the
@@ -1152,9 +1154,10 @@ public static class GameSceneBuilder
         treasureRoot.SetParent(parent, false);
         var reveal = treasureRoot.gameObject.AddComponent<TreasureReveal>();
 
-        // Both sides of the fire: the chest to the right, the gold heaped to the
-        // left, each with its own fall so the beat lands as a spill rather than a
-        // single thud.
+        // A hoard either side of the fire: two chests with the gold heaped and
+        // spilled between them, each piece with its own fall so the beat lands as
+        // a spill rather than a single thud. Everything sits wide of the flames
+        // and low enough never to cross the line to the board.
         var chestHolder = CreateTreasurePiece(treasureRoot, "Chest Gold", "Assets/Models/Props/chest_gold.fbx",
             new Vector3(1.32f, 0f, 2.80f), 0.72f, 200f);
         var chestRenderer = chestHolder.GetComponentInChildren<Renderer>(true);
@@ -1162,18 +1165,36 @@ public static class GameSceneBuilder
         reveal.InjectPieces(new[]
         {
             MakePiece(chestHolder, 1.75f, 0f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Chest", "Assets/Models/Props/chest.fbx",
+                new Vector3(-1.62f, 0f, 3.30f), 0.60f, -150f), 1.85f, 0.06f),
             MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Large", "Assets/Models/Props/coin_stack_large.fbx",
                 new Vector3(-1.22f, 0f, 2.42f), 0.36f, 20f), 1.95f, 0.12f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Large B", "Assets/Models/Props/coin_stack_large.fbx",
+                new Vector3(1.72f, 0f, 2.42f), 0.34f, 210f), 1.90f, 0.16f),
             MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Medium", "Assets/Models/Props/coin_stack_medium.fbx",
                 new Vector3(-1.44f, 0f, 2.88f), 0.28f, -35f), 1.70f, 0.28f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Medium B", "Assets/Models/Props/coin_stack_medium.fbx",
+                new Vector3(1.90f, 0f, 3.02f), 0.27f, 145f), 1.62f, 0.26f),
             MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Small", "Assets/Models/Props/coin_stack_small.fbx",
                 new Vector3(-1.00f, 0f, 2.98f), 0.22f, 55f), 1.55f, 0.20f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Small B", "Assets/Models/Props/coin_stack_small.fbx",
+                new Vector3(-1.72f, 0f, 2.56f), 0.22f, -60f), 1.48f, 0.30f),
             MakePiece(CreateTreasurePiece(treasureRoot, "Coin A", "Assets/Models/Props/coin.fbx",
                 new Vector3(-1.30f, 0f, 2.62f), 0.13f, 0f), 1.40f, 0.34f),
             MakePiece(CreateTreasurePiece(treasureRoot, "Coin B", "Assets/Models/Props/coin.fbx",
                 new Vector3(-1.12f, 0f, 3.06f), 0.13f, 40f), 1.35f, 0.40f),
             MakePiece(CreateTreasurePiece(treasureRoot, "Coin C", "Assets/Models/Props/coin.fbx",
-                new Vector3(1.02f, 0f, 2.48f), 0.13f, 90f), 1.45f, 0.46f),
+                new Vector3(1.02f, 0f, 2.48f), 0.13f, 90f), 1.45f, 0.44f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin D", "Assets/Models/Props/coin.fbx",
+                new Vector3(1.28f, 0f, 3.34f), 0.13f, 15f), 1.35f, 0.48f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin E", "Assets/Models/Props/coin.fbx",
+                new Vector3(-1.88f, 0f, 2.86f), 0.13f, 75f), 1.40f, 0.52f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin F", "Assets/Models/Props/coin.fbx",
+                new Vector3(-1.10f, 0f, 3.34f), 0.13f, 130f), 1.45f, 0.56f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin G", "Assets/Models/Props/coin.fbx",
+                new Vector3(1.86f, 0f, 2.70f), 0.13f, 200f), 1.38f, 0.60f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin H", "Assets/Models/Props/coin.fbx",
+                new Vector3(-0.86f, 0f, 3.24f), 0.13f, 25f), 1.42f, 0.64f),
         });
 
         var target = block.AddComponent<GameStartTarget>();
@@ -1181,6 +1202,9 @@ public static class GameSceneBuilder
         Wire(target, "m_LabelTarget", FindHead());
         Wire(target, "m_Treasure", reveal);
         Wire(target, "m_BlockRenderer", block.GetComponent<Renderer>());
+        // Without this the rings, which hang off the board root rather than the
+        // block, would stay floating once the night starts.
+        Wire(target, "m_HideRoot", startRoot.gameObject);
 
         var gameManager = Object.FindAnyObjectByType<GameManager>();
         if (gameManager == null)
@@ -1193,6 +1217,8 @@ public static class GameSceneBuilder
         Wire(target, "m_GameManager", gameManager);
         Wire(gameManager, "m_ChestRenderer", chestRenderer);
         Wire(gameManager, "m_TeethMaterial", AssetDatabase.LoadAssetAtPath<Material>(k_TeethMaterialPath));
+        Wire(gameManager, "m_IntroSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_HowlPath));
+        Wire(gameManager, "m_NightSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_NightPath));
 
         var serialized = new SerializedObject(gameManager);
         var waitForStart = serialized.FindProperty("m_WaitForStart");

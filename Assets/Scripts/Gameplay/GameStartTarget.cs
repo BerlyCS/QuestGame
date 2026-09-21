@@ -9,8 +9,8 @@ using UnityEngine;
 /// has to shoot to start. It doubles as the last step of the bow's tutorial.
 ///
 /// On the hit the treasure drops beside the fire (see <see cref="TreasureReveal"/>)
-/// and, after <see cref="m_HideDelay"/>, the block and its label step out of the
-/// way so the sightline into the forest is clear.
+/// and, after <see cref="m_HideDelay"/>, the whole board - block, bullseye and
+/// label - steps out of the way so the sightline into the forest is clear.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider))]
@@ -19,6 +19,9 @@ public class GameStartTarget : MonoBehaviour, IArrowHittable
     [Header("References")]
     [Tooltip("The floating label above the block. Hidden once the night starts.")]
     [SerializeField] GameObject m_Label;
+    [Tooltip("The whole board: block, bullseye rings and label. Hidden once the night starts. " +
+             "Leave empty to hide the block's parent, so the rings go with the block.")]
+    [SerializeField] GameObject m_HideRoot;
     [Tooltip("What the label faces. Defaults to the main camera.")]
     [SerializeField] Transform m_LabelTarget;
     [SerializeField] GameManager m_GameManager;
@@ -108,6 +111,13 @@ public class GameStartTarget : MonoBehaviour, IArrowHittable
 
         if (m_Label != null)
             m_Label.SetActive(false);
-        gameObject.SetActive(false);
+
+        // The block alone is not the whole target: the bullseye rings hang off the
+        // board root, so hiding only this object would leave them floating in the
+        // air. Take the whole board down.
+        var board = m_HideRoot != null
+            ? m_HideRoot
+            : (transform.parent != null ? transform.parent.gameObject : gameObject);
+        board.SetActive(false);
     }
 }
