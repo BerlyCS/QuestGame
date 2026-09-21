@@ -164,18 +164,24 @@ public static class WireEnemySystems
         return best;
     }
 
+    /// <summary>
+    /// The chest the victory twist swaps to teeth (see GameManager.Win). It sits
+    /// under Environment/Treasure and is inactive until the night is started, so
+    /// this has to search inactive objects too.
+    /// </summary>
     static Renderer FindChestRenderer()
     {
-        var chest = GameObject.Find("Chest");
-        if (chest != null)
+        foreach (var candidate in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
         {
-            var renderer = chest.GetComponent<Renderer>();
+            if (candidate.name != "Chest Gold" && candidate.name != "Chest")
+                continue;
+
+            var renderer = candidate.GetComponentInChildren<Renderer>(true);
             if (renderer != null)
                 return renderer;
         }
 
-        var treasure = GameObject.Find("Treasure Pedestal");
-        return treasure != null ? treasure.GetComponentInChildren<Renderer>() : null;
+        return null;
     }
 
     static void SetRef(Object target, string property, Object value)

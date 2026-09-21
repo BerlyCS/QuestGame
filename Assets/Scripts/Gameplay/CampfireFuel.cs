@@ -27,6 +27,11 @@ public class CampfireFuel : MonoBehaviour
     [Tooltip("Fuel consumed per second of real time. The fire can burn out completely.")]
     float m_BurnRatePerSecond = 0.35f;
 
+    [SerializeField]
+    [Tooltip("While off the fire holds its fuel level. Used through the prologue: " +
+        "the night is not running yet, so the fire must not burn down.")]
+    bool m_BurnsOverTime = true;
+
     [Header("Fire Light")]
     [SerializeField] Light m_FireLight;
     [SerializeField] float m_MinLightIntensity = 0.3f;
@@ -98,10 +103,20 @@ public class CampfireFuel : MonoBehaviour
             ApplyVisuals();
         }
 
-        if (m_CurrentFuel <= 0f)
+        if (m_CurrentFuel <= 0f || !m_BurnsOverTime)
             return;
 
         AddFuel(-m_BurnRatePerSecond * Time.deltaTime, false);
+    }
+
+    /// <summary>
+    /// Freezes or resumes the fuel drain. The prologue gate in
+    /// <see cref="GameManager"/> holds the fire until the night starts; the
+    /// visuals and the accepted logs are unaffected.
+    /// </summary>
+    public void SetBurnsOverTime(bool burnsOverTime)
+    {
+        m_BurnsOverTime = burnsOverTime;
     }
 
     public void AddFuel(float amount)

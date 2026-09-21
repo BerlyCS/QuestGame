@@ -45,6 +45,7 @@ public static class GameSceneBuilder
     const float k_LogModelLength = 0.7f;
     const string k_GroundTexturePath = "Assets/TerrainTexturesPackFree/TerrainTextures/GroundDryLeaves01.png";
     const string k_GroundNormalPath = "Assets/TerrainTexturesPackFree/TerrainTextures/GroundCracked01_N.png";
+    const string k_MoonTexturePath = "Assets/Textures/MoonAlbedo.png";
     // The pack sizes its terrain layer at one repeat per 4 m; the ground plane is
     // 60 m across, so this keeps roughly the same texel density.
     const float k_GroundTextureTiling = 15f;
@@ -102,7 +103,7 @@ public static class GameSceneBuilder
         BuildTutorialLog(campfire.transform);
         BuildTent(environment);
         BuildCampProps(environment);
-        BuildTreasure(environment);
+        BuildStartTargetAndTreasure(environment);
         BuildWeaponRack(environment);
         BuildInteractables(environment);
         BuildEnemyBanisher(environment);
@@ -200,12 +201,18 @@ public static class GameSceneBuilder
             log.transform.localRotation = Quaternion.Euler(0f, euler.y, 0f);
         }
 
+        // The start target and the treasure it pays for, rebuilt in place.
+        var environment = GameObject.Find("Environment");
+        if (environment != null)
+            BuildStartTargetAndTreasure(environment.transform);
+        else
+            Debug.LogWarning("[GameSceneBuilder] No 'Environment' object; the start target and treasure were not built.");
+
         AssetDatabase.SaveAssets();
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
 
-        Debug.Log($"[GameSceneBuilder] Applied sky, ground texture and log model to '{scene.path}'.");
-    }
+        Debug.Log($"[GameSceneBuilder] Applied sky, ground texture and log model to '{scene.path}'.");    }
 
     static Renderer FindGroundRenderer()
     {
@@ -418,6 +425,7 @@ public static class GameSceneBuilder
         s_Flame = CreateMaterial("M_Flame", new Color(1f, 0.6f, 0.15f), 0f, 0f, null, "Universal Render Pipeline/Particles/Unlit");
         s_Bone = CreateMaterial("M_Bone", new Color(0.82f, 0.8f, 0.72f), 0f, 0.15f);
         s_Moon = CreateMaterial("M_Moon", new Color(0.9f, 0.92f, 1f), 0f, 0.2f, new Color(1.5f, 1.6f, 2f));
+        ApplyMoonTexture(s_Moon);
         s_Axe = CreateTexturedMaterial("M_Axe", k_AxeTexturePath);
     }
 
@@ -1095,18 +1103,202 @@ public static class GameSceneBuilder
         }
     }
 
-    static GameObject BuildTreasure(Transform parent)
+    // The board the player shoots to start the night, standing behind the
+    // campfire (the fire sits at z 2.2) and high enough to clear the flames from
+    // the player's eye line.
+    static readonly Vector3 k_StartTargetPosition = new Vector3(0f, 0f, 5.2f);
+    const float k_StartTargetHeight = 1.15f;
+    const string k_StartMessage = "INICIAR JUEGO";
+    const string k_TeethMaterialPath = "Assets/Materials/Game/M_Teeth.mat";
+
+    /// <summary>
+    /// Builds the ceremonial first shot and the treasure it pays for: the
+    /// bullseye board the player shoots to start the night (see
+    /// <see cref="GameStartTarget"/>), the "INICIAR JUEGO" label above it, and
+    /// the gold and chest that drop in beside the campfire when it is hit (see
+    /// <see cref="TreasureReveal"/>).
+    ///
+    /// Idempotent, so it can be re-run over the scene that is already open. It
+    /// wires the GameManager when one is present; otherwise it warns and leaves
+    /// those references to Tools > Game > Wire Enemy Systems.
+    /// </summary>
+    static void BuildStartTargetAndTreasure(Transform parent)
     {
-        var treasure = new GameObject("Treasure Pedestal");
-        treasure.transform.SetParent(parent, false);
-        treasure.transform.localPosition = new Vector3(0f, 0f, 6f);
+        RemoveChild(parent, "Start Target");
+        RemoveChild(parent, "Treasure");
 
-        CreatePrimitive("Pedestal", PrimitiveType.Cylinder, treasure.transform,
-            new Vector3(0f, 0.5f, 0f), new Vector3(0.7f, 0.5f, 0.7f), s_Stone);
-        CreatePrimitive("Chest", PrimitiveType.Cube, treasure.transform,
-            new Vector3(0f, 1.2f, 0f), new Vector3(0.6f, 0.4f, 0.45f), s_Treasure);
+        var white = LoadOrCreateMaterial("M_TargetWhite", new Color(0.93f, 0.93f, 0.9f), 0f, 0.25f, new Color(0.56f, 0.56f, 0.54f));
+        var red = LoadOrCreateMaterial("M_TargetRed", new Color(0.75f, 0.09f, 0.07f), 0f, 0.25f, new Color(0.82f, 0.1f, 0.08f));
 
-        return treasure;
+        var startRoot = new GameObject("Start Target").transform;
+        startRoot.SetParent(parent, false);
+        startRoot.localPosition = k_StartTargetPosition;
+
+        var block = CreatePrimitive("Block", PrimitiveType.Cube, startRoot,
+            new Vector3(0f, k_StartTargetHeight, 0f), new Vector3(1.1f, 0.95f, 0.22f), s_Wood);
+        block.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+        // The bullseye: flat discs proud of the block's player-facing side. Their
+        // colliders come off so the arrow flies through them and stops on the
+        // block's own box, which is what carries the hit.
+        CreateBullseye(startRoot, white, red);
+
+        var label = WorldText.Create(k_StartMessage, new Color(1f, 0.82f, 0.35f), 2f);
+        label.transform.SetParent(startRoot, false);
+        label.transform.localPosition = new Vector3(0f, 1.98f, 0f);
+        label.transform.localRotation = Quaternion.identity;
+
+        var treasureRoot = new GameObject("Treasure").transform;
+        treasureRoot.SetParent(parent, false);
+        var reveal = treasureRoot.gameObject.AddComponent<TreasureReveal>();
+
+        // Both sides of the fire: the chest to the right, the gold heaped to the
+        // left, each with its own fall so the beat lands as a spill rather than a
+        // single thud.
+        var chestHolder = CreateTreasurePiece(treasureRoot, "Chest Gold", "Assets/Models/Props/chest_gold.fbx",
+            new Vector3(1.32f, 0f, 2.80f), 0.72f, 200f);
+        var chestRenderer = chestHolder.GetComponentInChildren<Renderer>(true);
+
+        reveal.InjectPieces(new[]
+        {
+            MakePiece(chestHolder, 1.75f, 0f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Large", "Assets/Models/Props/coin_stack_large.fbx",
+                new Vector3(-1.22f, 0f, 2.42f), 0.36f, 20f), 1.95f, 0.12f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Medium", "Assets/Models/Props/coin_stack_medium.fbx",
+                new Vector3(-1.44f, 0f, 2.88f), 0.28f, -35f), 1.70f, 0.28f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin Stack Small", "Assets/Models/Props/coin_stack_small.fbx",
+                new Vector3(-1.00f, 0f, 2.98f), 0.22f, 55f), 1.55f, 0.20f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin A", "Assets/Models/Props/coin.fbx",
+                new Vector3(-1.30f, 0f, 2.62f), 0.13f, 0f), 1.40f, 0.34f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin B", "Assets/Models/Props/coin.fbx",
+                new Vector3(-1.12f, 0f, 3.06f), 0.13f, 40f), 1.35f, 0.40f),
+            MakePiece(CreateTreasurePiece(treasureRoot, "Coin C", "Assets/Models/Props/coin.fbx",
+                new Vector3(1.02f, 0f, 2.48f), 0.13f, 90f), 1.45f, 0.46f),
+        });
+
+        var target = block.AddComponent<GameStartTarget>();
+        Wire(target, "m_Label", label);
+        Wire(target, "m_LabelTarget", FindHead());
+        Wire(target, "m_Treasure", reveal);
+        Wire(target, "m_BlockRenderer", block.GetComponent<Renderer>());
+
+        var gameManager = Object.FindAnyObjectByType<GameManager>();
+        if (gameManager == null)
+        {
+            Debug.LogWarning("[GameSceneBuilder] No GameManager: the start target was built but not wired. " +
+                "Run Tools > Game > Wire Enemy Systems, then this again.");
+            return;
+        }
+
+        Wire(target, "m_GameManager", gameManager);
+        Wire(gameManager, "m_ChestRenderer", chestRenderer);
+        Wire(gameManager, "m_TeethMaterial", AssetDatabase.LoadAssetAtPath<Material>(k_TeethMaterialPath));
+
+        var serialized = new SerializedObject(gameManager);
+        var waitForStart = serialized.FindProperty("m_WaitForStart");
+        if (waitForStart != null)
+            waitForStart.boolValue = true;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    static void CreateBullseye(Transform parent, Material outer, Material inner)
+    {
+        CreateDisc(parent, "Bullseye Outer", 0.74f, -0.130f, outer);
+        CreateDisc(parent, "Bullseye Ring", 0.48f, -0.155f, inner);
+        CreateDisc(parent, "Bullseye Bull", 0.20f, -0.180f, outer);
+    }
+
+    static void CreateDisc(Transform parent, string name, float diameter, float z, Material material)
+    {
+        // Unity's cylinder is 2 m tall and 1 m across; the rotation lays it flat
+        // against the board so only its capped face shows.
+        var disc = CreatePrimitive(name, PrimitiveType.Cylinder, parent,
+            new Vector3(0f, k_StartTargetHeight, z), new Vector3(diameter, 0.025f, diameter), material);
+        disc.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        RemoveCollider(disc);
+    }
+
+    /// <summary>
+    /// Builds one falling treasure piece: the model under a holder that carries
+    /// the resting pose, so the Imported model's own transform is never touched.
+    /// The piece starts hidden and <see cref="TreasureReveal"/> drops it.
+    /// </summary>
+    static Transform CreateTreasurePiece(Transform parent, string name, string modelPath, Vector3 position, float width, float yaw)
+    {
+        var holder = new GameObject(name).transform;
+        holder.SetParent(parent, false);
+        holder.localRotation = Quaternion.Euler(0f, yaw, 0f);
+
+        var asset = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+        if (asset == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Treasure model not found at {modelPath}.");
+            return holder;
+        }
+
+        var model = (GameObject)PrefabUtility.InstantiatePrefab(asset, holder);
+        model.name = "Model";
+        model.transform.localPosition = Vector3.zero;
+
+        holder.localScale = Vector3.one;
+        var size = RendererBounds(model).size;
+        float widest = Mathf.Max(0.0001f, Mathf.Max(size.x, size.z));
+        holder.localScale = Vector3.one * (width / widest);
+
+        // Sit it on the ground: the imported pivot is rarely at the model's feet.
+        var bounds = RendererBounds(model);
+        holder.position = new Vector3(position.x, position.y - bounds.min.y, position.z);
+        holder.gameObject.SetActive(false);
+        return holder;
+    }
+
+    static TreasureReveal.Piece MakePiece(Transform piece, float dropHeight, float delay)
+    {
+        return new TreasureReveal.Piece
+        {
+            m_Transform = piece,
+            m_DropHeight = dropHeight,
+            m_Delay = delay,
+            m_Dip = 0.06f,
+        };
+    }
+
+    static Bounds RendererBounds(GameObject go)
+    {
+        var renderers = go.GetComponentsInChildren<Renderer>(true);
+        bool found = false;
+        var bounds = new Bounds(go.transform.position, Vector3.zero);
+        foreach (var renderer in renderers)
+        {
+            if (!found) { bounds = renderer.bounds; found = true; }
+            else bounds.Encapsulate(renderer.bounds);
+        }
+
+        return bounds;
+    }
+
+    static Transform FindHead()
+    {
+        foreach (var candidate in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (candidate.name == "CenterEyeAnchor")
+                return candidate;
+        }
+
+        return null;
+    }
+
+    static void RemoveChild(Transform parent, string name)
+    {
+        var child = parent.Find(name);
+        if (child != null)
+            Object.DestroyImmediate(child.gameObject);
+    }
+
+    static Material LoadOrCreateMaterial(string name, Color color, float metallic, float smoothness, Color? emission = null)
+    {
+        var material = AssetDatabase.LoadAssetAtPath<Material>($"{k_MaterialFolder}/{name}.mat");
+        return material != null ? material : CreateMaterial(name, color, metallic, smoothness, emission);
     }
 
     /// <summary>
@@ -1551,6 +1743,35 @@ public static class GameSceneBuilder
         var collider = go.GetComponent<Collider>();
         if (collider != null)
             Object.DestroyImmediate(collider);
+    }
+
+    /// <summary>
+    /// Stamps the lunar surface map (albedo and emission, so the craters still
+    /// read once the moon starts glowing) onto the shared moon material. The
+    /// night controller keeps animating that material's colour and emission
+    /// over the night, so the map is multiplied by whatever tint the moon has
+    /// at that moment rather than replacing it.
+    /// </summary>
+    static void ApplyMoonTexture(Material moon)
+    {
+        var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(k_MoonTexturePath);
+        if (texture == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Moon texture not found at {k_MoonTexturePath}; the moon keeps its flat colour.");
+            return;
+        }
+
+        if (moon.HasProperty("_BaseMap"))
+            moon.SetTexture("_BaseMap", texture);
+        if (moon.HasProperty("_MainTex"))
+            moon.SetTexture("_MainTex", texture);
+        if (moon.HasProperty("_EmissionMap"))
+        {
+            moon.SetTexture("_EmissionMap", texture);
+            moon.EnableKeyword("_EMISSION");
+        }
+
+        EditorUtility.SetDirty(moon);
     }
 
     static Material CreateMaterial(string name, Color color, float metallic, float smoothness, Color? emission = null, string shaderName = "Universal Render Pipeline/Lit")

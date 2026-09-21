@@ -51,6 +51,13 @@ public class BowPullMeasurer : MonoBehaviour
     /// <summary>Normalized 0..1 draw amount.</summary>
     public float PullAmount { get; private set; }
 
+    /// <summary>
+    /// Number of arrows this bow has fired. Only released draws count, so
+    /// letting the string snap back does not tick it up. The tutorial markers
+    /// stay up until this reaches their target.
+    /// </summary>
+    public int ShotsFired { get; private set; }
+
     void Awake()
     {
         m_GrabInteractable = GetComponentInChildren<GrabInteractable>(true);
@@ -212,6 +219,7 @@ public class BowPullMeasurer : MonoBehaviour
             // the world and accumulates.
             arrow.Launch(pullAmount);
             m_Notch.ClearNocked();
+            ShotsFired++;
         }
 
         Restore();

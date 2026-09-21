@@ -45,9 +45,18 @@ public class HunterSpawner : MonoBehaviour
     [Tooltip("Swarm hunters spawn closer to the player.")]
     [SerializeField] float m_SwarmSpawnDistance = 10f;
 
+    [Header("Appearance")]
+    [Tooltip("Stinger played from the spot a red Cazador appears in, so the " +
+        "player hears where it came from. It never retriggers while the " +
+        "previous one is still audible.")]
+    [SerializeField] AudioClip m_AppearSfx;
+    [Range(0f, 1f)]
+    [SerializeField] float m_AppearSfxVolume = 0.9f;
+
     int m_Spawned;
     int m_Alive;
     float m_NextSpawnTime;
+    float m_NextAppearSfxTime;
     bool m_Swarm;
 
     void Update()
@@ -124,8 +133,39 @@ public class HunterSpawner : MonoBehaviour
         }
         skeleton.OnDied.AddListener(() => m_Alive = Mathf.Max(0, m_Alive - 1));
 
+        PlayAppearSfx(position);
+
         m_Spawned++;
         m_Alive++;
+    }
+
+    /// <summary>
+    /// Announces a Cazador from where it appeared. The sound is held back while
+    /// the previous one is still playing so a swarm does not stack a dozen
+    /// copies of the same stinger on top of each other.
+    /// </summary>
+    void PlayAppearSfx(Vector3 position)
+    {
+        if (m_AppearSfx == null || Time.time < m_NextAppearSfxTime)
+            return;
+
+        m_NextAppearSfxTime = Time.time + m_AppearSfx.length;
+
+        var go = new GameObject("Cazador Appear SFX");
+        go.transform.position = position;
+
+        var audio = go.AddComponent<AudioSource>();
+        audio.clip = m_AppearSfx;
+        audio.volume = Mathf.Clamp01(m_AppearSfxVolume);
+        audio.spatialBlend = 1f;
+        audio.rolloffMode = AudioRolloffMode.Linear;
+        audio.minDistance = 2f;
+        audio.maxDistance = 40f;
+        audio.dopplerLevel = 0f;
+        audio.playOnAwake = false;
+        audio.Play();
+
+        go.AddComponent<AutoDestroyAfter>().Lifetime = m_AppearSfx.length + 0.3f;
     }
 
     /// <summary>Debug-only: force-spawns one Cazador now (see DebugKeys).</summary>

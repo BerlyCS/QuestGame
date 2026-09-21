@@ -47,11 +47,8 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     [SerializeField] float m_RunSpeedThreshold = 1.3f;
 
     [Header("Obstacle avoidance")]
-    [Tooltip("Curve around trees, rocks and camp props instead of walking straight through them.")]
+    [Tooltip("Curve around the camp clutter instead of walking into it and shuffling in place.")]
     [SerializeField] bool m_AvoidObstacles = true;
-    [SerializeField] float m_AvoidProbeDistance = 1.2f;
-    [SerializeField] float m_AvoidProbeRadius = 0.35f;
-    [SerializeField] float m_AvoidProbeHeight = 1f;
     [Range(0f, 1.5f)]
     [SerializeField] float m_AvoidSteer = 0.9f;
 
@@ -92,6 +89,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     bool m_Retreating;
     Vector3 m_RetreatDirection;
     float m_RetreatEndTime;
+    EnemySteering.State m_Steering;
 
     public UnityEvent OnDied => m_OnDied;
     public bool IsAlive => m_Hits > 0;
@@ -160,40 +158,23 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
         if (direction.sqrMagnitude <= 0.0001f)
             return;
 
-        direction.Normalize();
-        direction = SteerAroundObstacles(direction);
+        direction = ResolveWalkDirection(direction);
         FaceToward(direction);
         transform.position += direction * (m_MoveSpeed * Time.deltaTime);
     }
 
     /// <summary>
-    /// Nudges the walk direction sideways when a tree, rock or camp prop is
-    /// directly ahead, so the Lanzahuesos curves around it instead of walking
-    /// through it and looking stuck. The campfire, the player and the other
-    /// enemies are ignored - those are what it is walking toward, not
-    /// obstacles.
+    /// The straight line to the target, unless something solid is in the way
+    /// (see <see cref="EnemySteering"/>): steers around camp props and slides
+    /// free sideways if it still manages to wedge itself.
     /// </summary>
-    Vector3 SteerAroundObstacles(Vector3 direction)
+    Vector3 ResolveWalkDirection(Vector3 direction)
     {
+        direction.y = 0f;
         if (!m_AvoidObstacles)
-            return direction;
+            return direction.normalized;
 
-        Vector3 origin = transform.position + Vector3.up * m_AvoidProbeHeight;
-        if (!Physics.SphereCast(origin, m_AvoidProbeRadius, direction, out RaycastHit hit,
-                m_AvoidProbeDistance, ~0, QueryTriggerInteraction.Ignore))
-            return direction;
-
-        var other = hit.collider;
-        if (other.GetComponentInParent<Skeleton>() != null
-            || other.GetComponentInParent<BoneThrower>() != null
-            || other.GetComponentInParent<CampfireFuel>() != null
-            || other.GetComponentInParent<PlayerHealth>() != null)
-            return direction;
-
-        // Hug the side of the obstacle the probe normal is *not* pointing at.
-        Vector3 side = Vector3.Cross(Vector3.up, direction).normalized;
-        float sign = Vector3.Dot(side, hit.normal) > 0f ? -1f : 1f;
-        return (direction + side * (sign * m_AvoidSteer)).normalized;
+        return EnemySteering.Resolve(transform, direction, m_MoveSpeed, m_AvoidSteer, ref m_Steering);
     }
 
     void FaceToward(Vector3 direction)

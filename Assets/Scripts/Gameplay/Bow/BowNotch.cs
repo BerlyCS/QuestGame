@@ -4,8 +4,9 @@ using UnityEngine;
 /// Trigger volume on the bow string that catches a passing <see cref="Arrow"/>
 /// and nocks it, exactly like the socket-based notch from the OOT shooting
 /// gallery. It can also spawn an arrow on its own (see <see cref="m_ArrowPrefab"/>)
-/// when the string is grabbed, so drawing the bow always has an arrow ready
-/// without having to first fetch one from the quiver.
+/// so grabbing the bow always has an arrow ready without having to first fetch
+/// one from the quiver: the arrow appears on the string, running from the grip
+/// down to the rope, the moment a hand closes around the bow.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 [DisallowMultipleComponent]
@@ -35,6 +36,20 @@ public class BowNotch : MonoBehaviour
         if (m_Bow == null)
         {
             m_Bow = GetComponentInParent<Bow>();
+        }
+    }
+
+    /// <summary>
+    /// Grabbing the bow is enough to get an arrow: the notch keeps one ready for
+    /// as long as the bow is held, so the player only has to reach for the
+    /// string. <see cref="EnsureNocked"/> is a no-op while an arrow is already
+    /// there, so this never stacks arrows up.
+    /// </summary>
+    void Update()
+    {
+        if (m_NockedArrow == null)
+        {
+            EnsureNocked();
         }
     }
 

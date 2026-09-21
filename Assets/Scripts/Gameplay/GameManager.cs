@@ -17,6 +17,11 @@ using UnityEngine.SceneManagement;
 /// fades to black over <see cref="m_DefeatFadeDuration"/> seconds while the
 /// sinister laugh plays, then restarts at the <see cref="m_DefeatRestartDelay"/> mark.
 ///
+/// Prologue: with <see cref="m_WaitForStart"/> on the night does not run yet -
+/// the survival clock, the enemy spawners and the fire's fuel drain are all held
+/// until <see cref="BeginNight"/>, which the player calls by shooting the start
+/// target behind the campfire (see <see cref="GameStartTarget"/>).
+///
 /// Fire outage (not a loss): when the campfire goes out
 /// (CampfireFuel.OnExtinguished) the survival clock pauses, the laugh plays,
 /// the Caminantes and Lanzahuesos retreat off into the dark, and a faster,
@@ -47,7 +52,11 @@ public class GameManager : MonoBehaviour
     [SerializeField] AudioClip m_LaughSfx;
 
     [Header("Opening")]
-    [Tooltip("Wolf howl played once when the night's scene loads.")]
+    [Tooltip("Holds the night until the player shoots the start target behind the campfire " +
+        "(GameStartTarget calls BeginNight). Off restores the old behaviour: the night runs " +
+        "from scene load.")]
+    [SerializeField] bool m_WaitForStart = true;
+    [Tooltip("Wolf howl played once when the night begins.")]
     [SerializeField] AudioClip m_IntroSfx;
 
     [Header("Ending twist (see DISEÑO.md 1.3)")]
@@ -57,10 +66,26 @@ public class GameManager : MonoBehaviour
     float m_Elapsed;
     bool m_GameOver;
     bool m_FireOut;
+    bool m_Started;
 
     /// <summary>Survival progress toward victory, 0-1. Read by NightEnvironmentController,
     /// which brings the dawn in across the whole sky.</summary>
     public float SurvivalNormalized => m_SurvivalDuration <= 0f ? 0f : Mathf.Clamp01(m_Elapsed / m_SurvivalDuration);
+
+    /// <summary>True once the night is running (see <see cref="BeginNight"/>).</summary>
+    public bool HasStarted => m_Started;
+
+    void Awake()
+    {
+        // Hold the night. Disabling the spawners in Awake rather than Start keeps
+        // their own Start - and the first spawn timer - from running before the
+        // player's first arrow lands.
+        if (!m_WaitForStart)
+            return;
+
+        SetSpawnersRunning(false);
+        SetCampfireBurning(false);
+    }
 
     void OnEnable()
     {
@@ -86,16 +111,37 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
-        // The wolf howl sets the mood the instant the night begins.
+        // With the prologue gate off there is nothing to wait for.
+        if (!m_WaitForStart)
+            BeginNight();
+    }
+
+    /// <summary>
+    /// Starts the night: the wolf howl, the survival clock, the enemy spawners
+    /// and the fire's fuel drain. The start target calls this when the player's
+    /// first arrow lands (see <see cref="GameStartTarget"/>); with
+    /// <see cref="m_WaitForStart"/> off it is called from Start instead.
+    /// Idempotent.
+    /// </summary>
+    public void BeginNight()
+    {
+        if (m_Started)
+            return;
+        m_Started = true;
+
         if (m_IntroSfx != null)
             Play2DSound(m_IntroSfx);
+
+        SetCampfireBurning(true);
+        SetSpawnersRunning(true);
     }
 
     void Update()
     {
         // The clock pauses while the fire is out (see HandleExtinguished): the
-        // player cannot outlast the darkness, they have to relight the fire.
-        if (m_GameOver || m_FireOut)
+        // player cannot outlast the darkness, they have to relight the fire. It
+        // also does not run at all until the night has been started.
+        if (m_GameOver || m_FireOut || !m_Started)
             return;
         m_Elapsed += Time.deltaTime;
         if (m_Elapsed >= m_SurvivalDuration)
@@ -156,10 +202,7 @@ public class GameManager : MonoBehaviour
             m_HunterSpawner.ExitSwarmMode();
         }
 
-        if (m_SkeletonSpawner != null)
-            m_SkeletonSpawner.enabled = true;
-        if (m_BoneThrowerSpawner != null)
-            m_BoneThrowerSpawner.enabled = true;
+        SetSpawnersRunning(true);
     }
 
     void HandlePlayerDied()
@@ -214,6 +257,25 @@ public class GameManager : MonoBehaviour
         Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
         EndGameBanner.Show(false, m_PlayerHealth != null ? m_PlayerHealth.Head : null);
         StartCoroutine(FadeToBlackThenRestart());
+    }
+
+    /// <summary>Enables or disables the three enemy spawners as one switch: the
+    /// prologue gate holds them all off, and the night runs them all at once.</summary>
+    void SetSpawnersRunning(bool running)
+    {
+        if (m_SkeletonSpawner != null)
+            m_SkeletonSpawner.enabled = running;
+        if (m_BoneThrowerSpawner != null)
+            m_BoneThrowerSpawner.enabled = running;
+        if (m_HunterSpawner != null)
+            m_HunterSpawner.enabled = running;
+    }
+
+    /// <summary>Holds or resumes the campfire's fuel drain (see CampfireFuel.SetBurnsOverTime).</summary>
+    void SetCampfireBurning(bool burning)
+    {
+        if (m_Campfire != null)
+            m_Campfire.SetBurnsOverTime(burning);
     }
 
     void Play2DSound(AudioClip clip)

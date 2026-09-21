@@ -42,6 +42,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     [Header("Repelled by light")]
     [SerializeField] float m_RepelFuelThreshold = 0.75f;
     [SerializeField] float m_RepelDistance = 4.5f;
+    [Tooltip("Extra distance the light has to lose its hold on a skeleton, so one " +
+             "hovering at the edge of the firelight does not flip between walking " +
+             "in and backing off every frame.")]
+    [SerializeField] float m_RepelHysteresis = 1.2f;
 
     [Header("References")]
     [SerializeField] CampfireFuel m_Campfire;
@@ -57,11 +61,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     [SerializeField] float m_RunSpeedThreshold = 1.3f;
 
     [Header("Obstacle avoidance")]
-    [Tooltip("Curve around trees, rocks and camp props instead of walking straight through them.")]
+    [Tooltip("Curve around the camp clutter instead of walking into it and shuffling in place.")]
     [SerializeField] bool m_AvoidObstacles = true;
-    [SerializeField] float m_AvoidProbeDistance = 1.2f;
-    [SerializeField] float m_AvoidProbeRadius = 0.35f;
-    [SerializeField] float m_AvoidProbeHeight = 1f;
     [Range(0f, 1.5f)]
     [SerializeField] float m_AvoidSteer = 0.9f;
 
@@ -105,8 +106,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     Vector3 m_BodyBasePosition;
     Color[] m_BaseColors;
     bool m_Retreating;
+    bool m_Repelled;
     Vector3 m_RetreatDirection;
     float m_RetreatEndTime;
+    EnemySteering.State m_Steering;
 
     public UnityEvent OnDied => m_OnDied;
     public bool IsAlive => m_Hits > 0;
@@ -184,7 +187,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         toCampfire.y = 0f;
         float distance = toCampfire.magnitude;
 
-        bool repelled = m_Campfire.Fuel01 > m_RepelFuelThreshold && distance < m_RepelDistance;
+        bool repelled = UpdateRepelled(distance);
 
         if (repelled)
         {
@@ -211,6 +214,24 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         }
 
         UpdateHitFlash();
+    }
+
+    /// <summary>
+    /// Whether the fire's light is currently holding this skeleton back. It
+    /// only lets go once the skeleton is further out than the distance that
+    /// caught it, so one hovering at the edge of the firelight walks steadily
+    /// instead of flipping direction on the spot every frame.
+    /// </summary>
+    bool UpdateRepelled(float distance)
+    {
+        if (m_Campfire.Fuel01 <= m_RepelFuelThreshold)
+            m_Repelled = false;
+        else if (distance <= m_RepelDistance)
+            m_Repelled = true;
+        else if (distance >= m_RepelDistance + m_RepelHysteresis)
+            m_Repelled = false;
+
+        return m_Repelled;
     }
 
     void UpdateHunter()
@@ -275,41 +296,24 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         if (direction.sqrMagnitude <= 0.0001f)
             return;
 
-        direction.Normalize();
-        direction = SteerAroundObstacles(direction);
+        direction = ResolveWalkDirection(direction);
         Quaternion look = Quaternion.LookRotation(direction, Vector3.up);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, look, m_TurnSpeed * Time.deltaTime);
         transform.position += direction * (m_MoveSpeed * Time.deltaTime);
     }
 
     /// <summary>
-    /// Nudges the walk direction sideways when a tree, rock or camp prop is
-    /// directly ahead, so the skeleton curves around it instead of walking
-    /// through it and looking stuck. The campfire, the player and the other
-    /// enemies are ignored - those are what it is walking toward, not
-    /// obstacles.
+    /// The straight line to the target, unless something solid is in the way
+    /// (see <see cref="EnemySteering"/>): steers around camp props and slides
+    /// free sideways if it still manages to wedge itself.
     /// </summary>
-    Vector3 SteerAroundObstacles(Vector3 direction)
+    Vector3 ResolveWalkDirection(Vector3 direction)
     {
+        direction.y = 0f;
         if (!m_AvoidObstacles)
-            return direction;
+            return direction.normalized;
 
-        Vector3 origin = transform.position + Vector3.up * m_AvoidProbeHeight;
-        if (!Physics.SphereCast(origin, m_AvoidProbeRadius, direction, out RaycastHit hit,
-                m_AvoidProbeDistance, ~0, QueryTriggerInteraction.Ignore))
-            return direction;
-
-        var other = hit.collider;
-        if (other.GetComponentInParent<Skeleton>() != null
-            || other.GetComponentInParent<BoneThrower>() != null
-            || other.GetComponentInParent<CampfireFuel>() != null
-            || other.GetComponentInParent<PlayerHealth>() != null)
-            return direction;
-
-        // Hug the side of the obstacle the probe normal is *not* pointing at.
-        Vector3 side = Vector3.Cross(Vector3.up, direction).normalized;
-        float sign = Vector3.Dot(side, hit.normal) > 0f ? -1f : 1f;
-        return (direction + side * (sign * m_AvoidSteer)).normalized;
+        return EnemySteering.Resolve(transform, direction, m_MoveSpeed, m_AvoidSteer, ref m_Steering);
     }
 
     void AnimateWalk()

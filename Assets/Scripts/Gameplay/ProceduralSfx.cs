@@ -9,7 +9,7 @@ public static class ProceduralSfx
 {
     const int k_SampleRate = 44100;
 
-    static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh;
+    static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh, s_TreasureLand;
 
     /// <summary>Dull wooden knock: the log settling into the hand.</summary>
     public static AudioClip WoodGrab => s_WoodGrab ??= Build("WoodGrab", 0.14f, (t, r) =>
@@ -27,6 +27,9 @@ public static class ProceduralSfx
 
     /// <summary>Defeat: a low, slowed-down villain laugh, "ha... ha... ha-ha-ha" (~3.6 s).</summary>
     public static AudioClip SinisterLaugh => s_SinisterLaugh ??= BuildLaugh();
+
+    /// <summary>Gold spilling onto the ground: a scatter of bright metallic ticks (~1.1 s).</summary>
+    public static AudioClip TreasureLand => s_TreasureLand ??= BuildTreasureLand();
 
     /// <summary>Fire-and-forget 3D one-shot at a world position (the source may already be destroyed).</summary>
     public static void PlayAt(AudioClip clip, Vector3 position, float volume = 1f, float pitch = 1f)
@@ -142,6 +145,45 @@ public static class ProceduralSfx
             float env = Mathf.Sin(Mathf.PI * u);
             samples[first + i] += Mathf.Sin(phase) * env * env * gain;
         }
+    }
+
+    /// <summary>
+    /// The treasure landing beside the fire: coins tapping the packed earth.
+    /// Seven overlapping bursts of inharmonic partials, so each one rings like
+    /// metal rather than a musical note.
+    /// </summary>
+    static AudioClip BuildTreasureLand()
+    {
+        const float duration = 1.1f;
+        int count = Mathf.RoundToInt(k_SampleRate * duration);
+        var samples = new float[count];
+        var random = new System.Random(47);
+
+        for (int coin = 0; coin < 7; coin++)
+        {
+            float start = 0.02f + (float)random.NextDouble() * 0.35f + coin * 0.03f;
+            float pitch = 1500f + (float)random.NextDouble() * 1800f;
+            float gain = 0.5f + (float)random.NextDouble() * 0.5f;
+            int first = Mathf.RoundToInt(start * k_SampleRate);
+            int n = Mathf.RoundToInt((0.18f + (float)random.NextDouble() * 0.12f) * k_SampleRate);
+
+            for (int i = 0; i < n && first + i < count; i++)
+            {
+                float t = i / (float)k_SampleRate;
+                float envelope = Mathf.Exp(-t * 26f);
+                float value = Mathf.Sin(2f * Mathf.PI * pitch * t)
+                    + 0.55f * Mathf.Sin(2f * Mathf.PI * pitch * 1.71f * t)
+                    + 0.35f * Mathf.Sin(2f * Mathf.PI * pitch * 2.43f * t);
+                samples[first + i] += value * envelope * gain * 0.28f;
+            }
+        }
+
+        for (int i = 0; i < count; i++)
+            samples[i] = Mathf.Clamp(samples[i], -1f, 1f);
+
+        var clip = AudioClip.Create("TreasureLand", count, 1, k_SampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
     }
 
     static AudioClip BuildLaugh()

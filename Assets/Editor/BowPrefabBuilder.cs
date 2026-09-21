@@ -32,6 +32,30 @@ public static class BowPrefabBuilder
     // hand; the meshes are authored quite large.
     const float k_BowScale = 0.49f;
 
+    // Grab volumes and tutorial markers, in bow-local metres. Everything under
+    // the bow root is scaled by k_BowScale, so the rope volume below is about
+    // 11 cm across in the world.
+    const float k_NotchLocalX = -0.023f;
+    const float k_NotchLocalZ = -0.22f;
+
+    // Rope (string) grab volume: deliberately generous so the string is easy to
+    // pinch, and centred a little behind the string, where the drawing hand
+    // actually arrives.
+    const float k_RopeGrabSize = 0.22f;
+    const float k_RopeGrabOffsetZ = -0.03f;
+
+    // The frame volume keeps its shape but is pushed in front of the rope
+    // volume, with this much daylight between the two. Overlapping them would
+    // let a hand reaching for the rope grab the bow instead.
+    const float k_GrabVolumeGap = 0.05f;
+    const float k_FrameGrabWidth = 0.1f;
+    const float k_FrameGrabHeight = 0.94f;
+    const float k_FrameGrabDepth = 0.2f;
+
+    // Tutorial marker spheres, in bow-local metres.
+    const float k_GripMarkerScale = 0.12f;
+    const float k_StringMarkerScale = 0.1f;
+
     // Both the bow and the arrow live on the Ignore Raycast layer.
     const int k_IgnoreRaycastLayer = 2;
 
@@ -148,10 +172,14 @@ public static class BowPrefabBuilder
         body.isKinematic = true;
         body.interpolation = RigidbodyInterpolation.Interpolate;
 
-        // Generous collider so the bow is easy to grab in VR.
+        // Generous collider so the bow is easy to grab in VR, but it stops in
+        // front of the string's grab volume so reaching for the rope can never
+        // catch the frame instead.
+        float ropeVolumeFrontZ = k_NotchLocalZ + k_RopeGrabOffsetZ + k_RopeGrabSize * 0.5f;
         BoxCollider collider = root.AddComponent<BoxCollider>();
-        collider.size = new Vector3(0.08f, 0.9f, 0.25f);
-        collider.center = new Vector3(0f, 0f, -0.05f);
+        collider.size = new Vector3(k_FrameGrabWidth, k_FrameGrabHeight, k_FrameGrabDepth);
+        collider.center = new Vector3(0f, 0f,
+            ropeVolumeFrontZ + k_GrabVolumeGap + k_FrameGrabDepth * 0.5f);
 
         Material bowMaterial = LoadAsset<Material>(k_BowMaterialPath);
 
@@ -174,7 +202,8 @@ public static class BowPrefabBuilder
         stringRenderer.InjectReferences(stringStart, stringMiddle, stringEnd);
 
         // Notch: trigger that catches a passing arrow.
-        GameObject notchObject = CreateEmpty("Notch", root.transform, new Vector3(-0.023f, 0f, -0.22f), Quaternion.identity, Vector3.one);
+        GameObject notchObject = CreateEmpty("Notch", root.transform,
+            new Vector3(k_NotchLocalX, 0f, k_NotchLocalZ), Quaternion.identity, Vector3.one);
         SphereCollider notchCollider = notchObject.AddComponent<SphereCollider>();
         notchCollider.isTrigger = true;
         notchCollider.radius = 0.08f;
@@ -187,10 +216,13 @@ public static class BowPrefabBuilder
         Transform drawStart = CreateEmpty("DrawStart", notchObject.transform, Vector3.zero, Quaternion.identity, Vector3.one).transform;
         Transform drawEnd = CreateEmpty("DrawEnd", notchObject.transform, new Vector3(0f, 0f, -0.48f), Quaternion.identity, Vector3.one).transform;
 
-        // Draw grip: a small grabbable volume on the string.
-        GameObject drawGrip = CreateEmpty("DrawGrip", notchObject.transform, Vector3.zero, Quaternion.identity, Vector3.one);
+        // Draw grip: the rope's grabbable volume. It is sized to be a
+        // comfortable VR pinch target and sits behind the frame's collider, so
+        // the two grab volumes never touch.
+        GameObject drawGrip = CreateEmpty("DrawGrip", notchObject.transform,
+            new Vector3(0f, 0f, k_RopeGrabOffsetZ), Quaternion.identity, Vector3.one);
         BoxCollider drawCollider = drawGrip.AddComponent<BoxCollider>();
-        drawCollider.size = new Vector3(0.12f, 0.12f, 0.12f);
+        drawCollider.size = Vector3.one * k_RopeGrabSize;
 
         AudioSource pullAudio = drawGrip.AddComponent<AudioSource>();
         pullAudio.clip = LoadAsset<AudioClip>(k_BowPullClipPath);
@@ -244,10 +276,19 @@ public static class BowPrefabBuilder
 
         // Force the bow to be held by its grip (riser) instead of being
         // grabbed from an arbitrary point along the limbs.
-        SetGrabHandle(root, new Vector3(-0.03f, 0f, -0.07f), Quaternion.Euler(0f, 0f, 90f));
+        Transform gripHandle = SetGrabHandle(root, new Vector3(-0.03f, 0f, -0.07f), Quaternion.Euler(0f, 0f, 90f));
 
         BowPullMeasurer measurer = drawGrip.AddComponent<BowPullMeasurer>();
         measurer.InjectReferences(drawStart, drawEnd, stringMiddle, notch, pullAudio);
+
+        // Tutorial: a marker on the grip until the bow is held, then one on the
+        // string until the first arrows have been fired (see BowTutorial).
+        Material markerMaterial = GetOrCreateIndicatorMaterial();
+        Renderer gripMarker = CreateMarker("GripIndicator", gripHandle, Vector3.zero, k_GripMarkerScale, markerMaterial);
+        Renderer stringMarker = CreateMarker("StringIndicator", stringMiddle, Vector3.zero, k_StringMarkerScale, markerMaterial);
+
+        BowTutorial tutorial = root.AddComponent<BowTutorial>();
+        tutorial.InjectReferences(bow, measurer, gripMarker, stringMarker);
 
         root.transform.localScale = Vector3.one * k_BowScale;
 
@@ -309,8 +350,9 @@ public static class BowPrefabBuilder
     /// Adds a grip transform and makes every grab interactable owned by
     /// <paramref name="root"/> (not its nested props) use it, so the object is
     /// always held by the grip instead of wherever the hand happened to touch.
+    /// Returns the grip so callers can hang things off it (the tutorial marker).
     /// </summary>
-    static void SetGrabHandle(GameObject root, Vector3 handleLocalPosition, Quaternion handleLocalRotation)
+    static Transform SetGrabHandle(GameObject root, Vector3 handleLocalPosition, Quaternion handleLocalRotation)
     {
         Transform handle = CreateEmpty("Grip", root.transform, handleLocalPosition, handleLocalRotation, Vector3.one).transform;
 
@@ -334,6 +376,72 @@ public static class BowPrefabBuilder
             pose.InjectOptionalHandPose(null);
             handGrab.InjectOptionalHandGrabPoses(new List<HandGrabPose> { pose });
         }
+
+        return handle;
+    }
+
+    /// <summary>
+    /// Builds one of the bow's tutorial markers: an additive glow sphere with no
+    /// collider, hidden until <see cref="BowTutorial"/> switches it on. The
+    /// collider is dropped so a marker can never be grabbed, and the Ignore
+    /// Raycast layer keeps it out of the arrow's flight sweep.
+    /// </summary>
+    static Renderer CreateMarker(string name, Transform parent, Vector3 localPosition, float scale, Material material)
+    {
+        GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        sphere.name = name;
+        sphere.layer = k_IgnoreRaycastLayer;
+
+        Collider sphereCollider = sphere.GetComponent<Collider>();
+        if (sphereCollider != null)
+        {
+            Object.DestroyImmediate(sphereCollider);
+        }
+
+        sphere.transform.SetParent(parent, false);
+        sphere.transform.localPosition = localPosition;
+        sphere.transform.localRotation = Quaternion.identity;
+        sphere.transform.localScale = Vector3.one * scale;
+
+        Renderer renderer = sphere.GetComponent<Renderer>();
+        if (material != null)
+        {
+            renderer.sharedMaterial = material;
+        }
+
+        renderer.enabled = false;
+        return renderer;
+    }
+
+    /// <summary>
+    /// Additive, unlit, depth-write-free glow used by the tutorial markers. It
+    /// matches the grab glow used elsewhere in the game so a marker reads as a
+    /// soft light instead of a solid ball.
+    /// </summary>
+    static Material GetOrCreateIndicatorMaterial()
+    {
+        const string path = "Assets/Materials/Bow/Indicator.mat";
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material != null)
+        {
+            return material;
+        }
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        material = new Material(shader) { name = "M_BowIndicator" };
+        material.SetFloat("_Surface", 1f);
+        material.SetFloat("_Blend", 2f);
+        material.SetFloat("_AlphaClip", 0f);
+        material.SetFloat("_ZWrite", 0f);
+        material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+        material.SetColor("_BaseColor", Color.white);
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.DisableKeyword("_ALPHATEST_ON");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        material.SetShaderPassEnabled("ShadowCaster", false);
+        AssetDatabase.CreateAsset(material, path);
+        return material;
     }
 
     static void InstantiateModel(string path, Transform parent, Vector3 localPosition, Quaternion localRotation, Vector3 localScale, Material material)
