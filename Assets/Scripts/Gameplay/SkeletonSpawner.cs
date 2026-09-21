@@ -123,4 +123,19 @@ public class SkeletonSpawner : MonoBehaviour
 
         Spawn();
     }
+
+    /// <summary>
+    /// Sends every live Caminante away when the campfire dies (see GameManager's
+    /// outage). Red Cazadores are left alone - they are the ones closing in.
+    /// </summary>
+    public void RetreatAll()
+    {
+        foreach (var skeleton in Object.FindObjectsByType<Skeleton>(FindObjectsInactive.Exclude))
+        {
+            if (skeleton != null && !skeleton.IsHunter)
+                skeleton.Retreat();
+        }
+
+        m_Alive = 0;
+    }
 }

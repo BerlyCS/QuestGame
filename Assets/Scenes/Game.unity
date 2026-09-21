@@ -56349,6 +56349,7 @@ MonoBehaviour:
   m_VictoryLitDuration: 10
   m_DefeatFadeDuration: 1.5
   m_DefeatRestartDelay: 5
+  m_LaughSfx: {fileID: 8300000, guid: b7f3c1a94e2d4f6b8a0c1d2e3f4a5b6c, type: 3}
   m_ChestRenderer: {fileID: 0}
   m_TeethMaterial: {fileID: 2100000, guid: 8f7669bdbe59d411981fa7bb9f96487a, type: 2}
 --- !u!4 &759823766
@@ -99880,7 +99881,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ebb9c08fc45e9947aef47463055927e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
-  m_MaxHealth: 100
+  m_MaxHealth: 150
   m_Head: {fileID: 2048067828}
   m_VignetteMaterial: {fileID: 2100000, guid: d4923e3a8e56f40b2b3f26f7ac04fac4, type: 2}
   m_OnDied:

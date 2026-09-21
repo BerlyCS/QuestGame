@@ -114,4 +114,19 @@ public class BoneThrowerSpawner : MonoBehaviour
 
         Spawn();
     }
+
+    /// <summary>
+    /// Sends every live Lanzahuesos away when the campfire dies (see
+    /// GameManager's outage).
+    /// </summary>
+    public void RetreatAll()
+    {
+        foreach (var boneThrower in Object.FindObjectsByType<BoneThrower>(FindObjectsInactive.Exclude))
+        {
+            if (boneThrower != null)
+                boneThrower.Retreat();
+        }
+
+        m_Alive = 0;
+    }
 }

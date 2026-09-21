@@ -11,7 +11,14 @@ using UnityEngine.Events;
 [DisallowMultipleComponent]
 public class PlayerHealth : MonoBehaviour
 {
-    [SerializeField] float m_MaxHealth = 100f;
+    [SerializeField] float m_MaxHealth = 150f;
+
+    [Header("Regeneration")]
+    [Tooltip("Seconds after the last hit before health starts coming back.")]
+    [SerializeField] float m_RegenDelay = 6f;
+    [Tooltip("Health restored per second once the delay has passed, so the damage vignette clears.")]
+    [SerializeField] float m_RegenPerSecond = 5f;
+
     [SerializeField] Transform m_Head;
 
     [Tooltip("Transparent unlit material for the damage vignette quad (its texture is generated here).")]
@@ -21,6 +28,7 @@ public class PlayerHealth : MonoBehaviour
 
     float m_Health;
     float m_HurtPulse;
+    float m_LastDamageTime = float.NegativeInfinity;
     Material m_Instance;
     Renderer m_Vignette;
 
@@ -57,6 +65,25 @@ public class PlayerHealth : MonoBehaviour
 
     void Update()
     {
+        Regenerate();
+        UpdateVignette();
+    }
+
+    void Regenerate()
+    {
+        if (!IsAlive || m_Health >= m_MaxHealth)
+            return;
+
+        // Health only comes back once the player has been left alone for a
+        // while, so a burst of hits still hurts but the red never lingers.
+        if (Time.time - m_LastDamageTime < m_RegenDelay)
+            return;
+
+        m_Health = Mathf.Min(m_MaxHealth, m_Health + m_RegenPerSecond * Time.deltaTime);
+    }
+
+    void UpdateVignette()
+    {
         if (m_Vignette == null)
             return;
 
@@ -73,6 +100,7 @@ public class PlayerHealth : MonoBehaviour
 
         m_Health = Mathf.Max(0f, m_Health - amount);
         m_HurtPulse = 1f;
+        m_LastDamageTime = Time.time;
 
         if (m_Health <= 0f)
             m_OnDied.Invoke();

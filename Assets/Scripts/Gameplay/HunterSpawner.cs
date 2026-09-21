@@ -33,9 +33,22 @@ public class HunterSpawner : MonoBehaviour
     [SerializeField] int m_MaxAliveLate = 2;
     [SerializeField] float m_LateAtSurvival = 0.6f;
 
+    [Header("Fire outage (swarm)")]
+    [Tooltip("Spawn interval while the campfire is out.")]
+    [SerializeField] float m_SwarmSpawnInterval = 3f;
+    [Tooltip("How many swarm hunters can be alive at once.")]
+    [SerializeField] int m_SwarmMaxAlive = 5;
+    [Tooltip("Swarm hunters walk faster than the normal Cazador.")]
+    [SerializeField] float m_SwarmMoveSpeed = 1.1f;
+    [Tooltip("Swarm hunters take more hits before they go down.")]
+    [SerializeField] int m_SwarmHits = 4;
+    [Tooltip("Swarm hunters spawn a little closer to the player.")]
+    [SerializeField] float m_SwarmSpawnDistance = 7f;
+
     int m_Spawned;
     int m_Alive;
     float m_NextSpawnTime;
+    bool m_Swarm;
 
     void Update()
     {
@@ -43,15 +56,48 @@ public class HunterSpawner : MonoBehaviour
             return;
 
         float survival = m_GameManager.SurvivalNormalized;
-        if (survival < m_StartAtSurvival)
+        if (!m_Swarm && survival < m_StartAtSurvival)
             return;
 
-        int cap = survival >= m_LateAtSurvival ? m_MaxAliveLate : m_MaxAlive;
+        int cap = m_Swarm
+            ? m_SwarmMaxAlive
+            : (survival >= m_LateAtSurvival ? m_MaxAliveLate : m_MaxAlive);
         if (m_Alive >= cap || Time.time < m_NextSpawnTime)
             return;
 
         Spawn();
-        m_NextSpawnTime = Time.time + Mathf.Max(m_MinInterval, m_SpawnInterval - m_Spawned * m_IntervalRampPerSpawn);
+
+        float interval = m_Swarm
+            ? m_SwarmSpawnInterval
+            : Mathf.Max(m_MinInterval, m_SpawnInterval - m_Spawned * m_IntervalRampPerSpawn);
+        m_NextSpawnTime = Time.time + interval;
+    }
+
+    /// <summary>
+    /// Switches to the fire-outage swarm: faster, tougher and more numerous
+    /// hunters that keep coming until the campfire is relit.
+    /// </summary>
+    public void EnterSwarmMode()
+    {
+        m_Swarm = true;
+        m_NextSpawnTime = Time.time;
+    }
+
+    public void ExitSwarmMode() => m_Swarm = false;
+
+    /// <summary>
+    /// Kills every Cazador in the world with the normal death effect (the
+    /// lego-breaking sound). Called when the campfire is relit.
+    /// </summary>
+    public void KillAllHunters()
+    {
+        foreach (var skeleton in Object.FindObjectsByType<Skeleton>(FindObjectsInactive.Exclude))
+        {
+            if (skeleton != null && skeleton.IsHunter)
+                skeleton.Kill();
+        }
+
+        m_Alive = 0;
     }
 
     void Spawn()
@@ -64,11 +110,17 @@ public class HunterSpawner : MonoBehaviour
         Vector3 direction = Random.value < m_BehindChance ? -forward : forward;
         direction = Quaternion.Euler(0f, Random.Range(-m_SpreadDegrees, m_SpreadDegrees), 0f) * direction;
 
-        Vector3 position = new Vector3(head.x, 0f, head.z) + direction * m_SpawnDistance;
+        float distance = m_Swarm ? m_SwarmSpawnDistance : m_SpawnDistance;
+        Vector3 position = new Vector3(head.x, 0f, head.z) + direction * distance;
         var hunter = Instantiate(m_HunterPrefab, position, Quaternion.LookRotation(-direction, Vector3.up));
 
         var skeleton = hunter.GetComponent<Skeleton>();
         skeleton.SetPlayer(m_Player);
+        if (m_Swarm)
+        {
+            skeleton.SetMoveSpeed(m_SwarmMoveSpeed);
+            skeleton.SetMaxHits(m_SwarmHits);
+        }
         skeleton.OnDied.AddListener(() => m_Alive = Mathf.Max(0, m_Alive - 1));
 
         m_Spawned++;

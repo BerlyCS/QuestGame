@@ -11,10 +11,16 @@ using UnityEngine.SceneManagement;
 /// freezes and collapses, the world lights up for
 /// <see cref="m_VictoryLitDuration"/> seconds, then restarts.
 ///
-/// Defeat: the campfire goes out (CampfireFuel.OnExtinguished) or the player's
-/// life runs out (PlayerHealth.OnDied). The world
-/// fades to black over <see cref="m_DefeatFadeDuration"/> seconds, then
-/// restarts at the <see cref="m_DefeatRestartDelay"/> mark.
+/// Defeat: the player's life runs out (PlayerHealth.OnDied). The world
+/// fades to black over <see cref="m_DefeatFadeDuration"/> seconds while the
+/// sinister laugh plays, then restarts at the <see cref="m_DefeatRestartDelay"/> mark.
+///
+/// Fire outage (not a loss): when the campfire goes out
+/// (CampfireFuel.OnExtinguished) the survival clock pauses, the laugh plays,
+/// the Caminantes and Lanzahuesos retreat off into the dark, and a faster,
+/// tougher swarm of Cazadores replaces them. Relighting the fire
+/// (CampfireFuel.OnIgnited) kills the swarm with the lego-breaking sound and
+/// resumes the night where it left off.
 /// </summary>
 [DisallowMultipleComponent]
 public class GameManager : MonoBehaviour
@@ -34,6 +40,9 @@ public class GameManager : MonoBehaviour
     [Header("Defeat")]
     [SerializeField] float m_DefeatFadeDuration = 1.5f;
     [SerializeField] float m_DefeatRestartDelay = 5f;
+    [Tooltip("Sinister laugh: plays when the campfire dies and again when the player dies. " +
+        "Falls back to the procedural laugh when empty.")]
+    [SerializeField] AudioClip m_LaughSfx;
 
     [Header("Ending twist (see DISEÑO.md 1.3)")]
     [SerializeField] Renderer m_ChestRenderer;
@@ -41,6 +50,7 @@ public class GameManager : MonoBehaviour
 
     float m_Elapsed;
     bool m_GameOver;
+    bool m_FireOut;
 
     /// <summary>Survival progress toward victory, 0-1. Read by NightEnvironmentController,
     /// which brings the dawn in across the whole sky.</summary>
@@ -49,22 +59,30 @@ public class GameManager : MonoBehaviour
     void OnEnable()
     {
         if (m_Campfire != null)
+        {
             m_Campfire.OnExtinguished.AddListener(HandleExtinguished);
+            m_Campfire.OnIgnited.AddListener(HandleRelit);
+        }
         if (m_PlayerHealth != null)
-            m_PlayerHealth.OnDied.AddListener(HandleExtinguished);
+            m_PlayerHealth.OnDied.AddListener(HandlePlayerDied);
     }
 
     void OnDisable()
     {
         if (m_Campfire != null)
+        {
             m_Campfire.OnExtinguished.RemoveListener(HandleExtinguished);
+            m_Campfire.OnIgnited.RemoveListener(HandleRelit);
+        }
         if (m_PlayerHealth != null)
-            m_PlayerHealth.OnDied.RemoveListener(HandleExtinguished);
+            m_PlayerHealth.OnDied.RemoveListener(HandlePlayerDied);
     }
 
     void Update()
     {
-        if (m_GameOver)
+        // The clock pauses while the fire is out (see HandleExtinguished): the
+        // player cannot outlast the darkness, they have to relight the fire.
+        if (m_GameOver || m_FireOut)
             return;
 
         m_Elapsed += Time.deltaTime;
@@ -78,7 +96,61 @@ public class GameManager : MonoBehaviour
         m_Elapsed = seconds;
     }
 
+    /// <summary>
+    /// The campfire went out. Not a loss: the night stops advancing (the
+    /// survival clock pauses) and the player must relight the fire with logs
+    /// while the normal enemies retreat and a faster, tougher swarm closes in.
+    /// </summary>
     void HandleExtinguished()
+    {
+        if (m_GameOver || m_FireOut)
+            return;
+
+        m_FireOut = true;
+        PlayEndSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
+
+        // The Caminantes and Lanzahuesos walk off and vanish; only the red
+        // swarm is left hunting the player.
+        if (m_SkeletonSpawner != null)
+        {
+            m_SkeletonSpawner.enabled = false;
+            m_SkeletonSpawner.RetreatAll();
+        }
+
+        if (m_BoneThrowerSpawner != null)
+        {
+            m_BoneThrowerSpawner.enabled = false;
+            m_BoneThrowerSpawner.RetreatAll();
+        }
+
+        if (m_HunterSpawner != null)
+            m_HunterSpawner.EnterSwarmMode();
+    }
+
+    /// <summary>
+    /// The campfire was relit: the swarm dies with the lego-breaking sound and
+    /// the night resumes exactly where it left off.
+    /// </summary>
+    void HandleRelit()
+    {
+        if (m_GameOver || !m_FireOut)
+            return;
+
+        m_FireOut = false;
+
+        if (m_HunterSpawner != null)
+        {
+            m_HunterSpawner.KillAllHunters();
+            m_HunterSpawner.ExitSwarmMode();
+        }
+
+        if (m_SkeletonSpawner != null)
+            m_SkeletonSpawner.enabled = true;
+        if (m_BoneThrowerSpawner != null)
+            m_BoneThrowerSpawner.enabled = true;
+    }
+
+    void HandlePlayerDied()
     {
         if (m_GameOver)
             return;
@@ -126,7 +198,7 @@ public class GameManager : MonoBehaviour
         if (m_HunterSpawner != null)
             m_HunterSpawner.enabled = false;
 
-        PlayEndSound(ProceduralSfx.SinisterLaugh);
+        PlayEndSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
         StartCoroutine(FadeToBlackThenRestart());
     }
 

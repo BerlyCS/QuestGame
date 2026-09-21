@@ -57,6 +57,11 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     [SerializeField, Range(0f, 1f)] float m_DeathSfxVolume = 0.85f;
     [SerializeField] bool m_DeathParticles = true;
 
+    [Header("Retreat (fire outage)")]
+    [Tooltip("How long the skeleton walks away from the dead fire before it disappears.")]
+    [SerializeField] float m_RetreatDuration = 2.5f;
+    [SerializeField] float m_RetreatSpeed = 1.6f;
+
     [Header("Events")]
     [SerializeField] UnityEvent m_OnDied = new UnityEvent();
 
@@ -67,9 +72,18 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     float m_HitFlashUntil;
     Vector3 m_BodyBasePosition;
     Color[] m_BaseColors;
+    bool m_Retreating;
+    Vector3 m_RetreatDirection;
+    float m_RetreatEndTime;
 
     public UnityEvent OnDied => m_OnDied;
     public bool IsAlive => m_Hits > 0;
+
+    /// <summary>True for the red Cazadores (spawned by HunterSpawner), which the fire outage replaces the normal enemies with.</summary>
+    public bool IsHunter => m_HuntsPlayer;
+
+    /// <summary>True while the skeleton is walking off after the fire went out.</summary>
+    public bool IsRetreating => m_Retreating;
 
     /// <summary>Wired by SkeletonSpawner at spawn time; the only thing this enemy ever targets.</summary>
     public void SetCampfire(CampfireFuel campfire) => m_Campfire = campfire;
@@ -81,6 +95,22 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         m_HuntsPlayer = true;
         m_MoveSpeed = m_HunterMoveSpeed;
     }
+
+    /// <summary>Overrides the hit count so the fire-outage swarm can be tougher.</summary>
+    public void SetMaxHits(int hits)
+    {
+        m_MaxHits = Mathf.Max(1, hits);
+        m_Hits = m_MaxHits;
+    }
+
+    /// <summary>Overrides the walk speed so the fire-outage swarm can be faster.</summary>
+    public void SetMoveSpeed(float speed) => m_MoveSpeed = speed;
+
+    /// <summary>
+    /// Kills this skeleton as a real combat kill (death SFX + particles + OnDied).
+    /// Used when the campfire is relit: the swarm dies with the lego-breaking sound.
+    /// </summary>
+    public void Kill() => Die();
 
     void Awake()
     {
@@ -99,6 +129,12 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     void Update()
     {
+        if (m_Retreating)
+        {
+            UpdateRetreat();
+            return;
+        }
+
         if (m_HuntsPlayer)
         {
             UpdateHunter();
@@ -250,6 +286,43 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             return;
 
         Die();
+    }
+
+    /// <summary>
+    /// Sent away when the campfire dies (see GameManager's outage): the
+    /// skeleton stops counting as hittable, turns away from the fire, walks off
+    /// and then disappears. OnDied still fires on the way out so the spawners
+    /// keep their alive counts straight.
+    /// </summary>
+    public void Retreat()
+    {
+        if (m_Retreating || !IsAlive)
+            return;
+
+        m_Retreating = true;
+        m_Hits = 0;
+        m_RetreatEndTime = Time.time + m_RetreatDuration;
+
+        Vector3 source = m_HuntsPlayer && m_Player != null && m_Player.Head != null
+            ? m_Player.Head.position
+            : (m_Campfire != null ? m_Campfire.transform.position : transform.position - transform.forward);
+
+        Vector3 away = transform.position - source;
+        away.y = 0f;
+        m_RetreatDirection = away.sqrMagnitude > 0.0001f ? away.normalized : -transform.forward;
+    }
+
+    void UpdateRetreat()
+    {
+        transform.position += m_RetreatDirection * (m_RetreatSpeed * Time.deltaTime);
+        FaceToward(m_RetreatDirection);
+        AnimateWalk();
+
+        if (Time.time >= m_RetreatEndTime)
+        {
+            m_OnDied.Invoke();
+            Destroy(gameObject);
+        }
     }
 
     /// <summary>A landed arrow counts as one hit (see <see cref="IArrowHittable"/>).</summary>

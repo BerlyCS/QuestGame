@@ -56,5 +56,14 @@ public class DebugKeys : MonoBehaviour
 
         if (keyboard.nKey.wasPressedThisFrame && m_GameManager != null)
             m_GameManager.DebugSetElapsed(m_SkipToSeconds);
+
+        // '4' instantly burns the fire out, to test the outage (fast swarm,
+        // retreating enemies, relight-to-resume) without waiting.
+        if (keyboard.digit4Key.wasPressedThisFrame)
+        {
+            var campfire = Object.FindAnyObjectByType<CampfireFuel>();
+            if (campfire != null)
+                campfire.AddFuel(-campfire.CurrentFuel);
+        }
     }
 }
