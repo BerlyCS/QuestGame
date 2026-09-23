@@ -32,6 +32,11 @@ public class CampfireFuel : MonoBehaviour
         "the night is not running yet, so the fire must not burn down.")]
     bool m_BurnsOverTime = true;
 
+    [SerializeField]
+    [Tooltip("Seconds the flame/light/audio take to catch up to a fuel change. " +
+        "Keeps the first log from snapping the fire to full: it swells into life.")]
+    float m_VisualRampSeconds = 1.6f;
+
     [Header("Fire Light")]
     [SerializeField] Light m_FireLight;
     [SerializeField] float m_MinLightIntensity = 0.3f;
@@ -61,6 +66,7 @@ public class CampfireFuel : MonoBehaviour
     [SerializeField] UnityEvent m_OnExtinguished = new UnityEvent();
 
     float m_CurrentFuel;
+    float m_DisplayFuel;
     float m_Flare;
     bool m_WasBurning;
     AudioSource m_FireAudio;
@@ -89,6 +95,7 @@ public class CampfireFuel : MonoBehaviour
         m_FireAudio.spatialBlend = 1f;
 
         m_CurrentFuel = Mathf.Clamp(m_StartingFuel, 0f, m_MaxFuel);
+        m_DisplayFuel = m_CurrentFuel;
         m_WasBurning = IsBurning;
         ApplyVisuals();
 
@@ -97,11 +104,25 @@ public class CampfireFuel : MonoBehaviour
 
     void Update()
     {
+        bool visualsDirty = false;
+
+        // The flame, light and crackle trail the real fuel so a log catching
+        // reads as the fire swelling back to life rather than snapping.
+        if (!Mathf.Approximately(m_DisplayFuel, m_CurrentFuel))
+        {
+            float rate = m_MaxFuel / Mathf.Max(0.05f, m_VisualRampSeconds);
+            m_DisplayFuel = Mathf.MoveTowards(m_DisplayFuel, m_CurrentFuel, rate * Time.deltaTime);
+            visualsDirty = true;
+        }
+
         if (m_Flare > 0f)
         {
             m_Flare = Mathf.Max(0f, m_Flare - Time.deltaTime * 1.6f);
-            ApplyVisuals();
+            visualsDirty = true;
         }
+
+        if (visualsDirty)
+            ApplyVisuals();
 
         if (m_CurrentFuel <= 0f || !m_BurnsOverTime)
             return;
@@ -164,13 +185,14 @@ public class CampfireFuel : MonoBehaviour
     public void SetFuel(float amount)
     {
         m_CurrentFuel = Mathf.Clamp(amount, 0f, m_MaxFuel);
+        m_DisplayFuel = m_CurrentFuel;
         m_WasBurning = IsBurning;
         ApplyVisuals();
     }
 
     void ApplyVisuals()
     {
-        float n = Fuel01;
+        float n = m_MaxFuel <= 0f ? 0f : Mathf.Clamp01(m_DisplayFuel / m_MaxFuel);
         float curved = Mathf.Pow(n, m_LightCurveExponent);
 
         if (m_FireLight != null)
@@ -202,7 +224,9 @@ public class CampfireFuel : MonoBehaviour
 
         if (m_FireAudio != null)
         {
-            m_FireAudio.volume = Mathf.Lerp(m_MinFireVolume, m_MaxFireVolume, n);
+            // Silent while there is no fire at all, so a dead prologue campfire
+            // is not quietly hissing the whole time.
+            m_FireAudio.volume = n <= 0.001f ? 0f : Mathf.Lerp(m_MinFireVolume, m_MaxFireVolume, n);
             m_FireAudio.pitch = Mathf.Lerp(m_MinFirePitch, m_MaxFirePitch, n);
         }
     }

@@ -42,6 +42,9 @@ public class BowTutorial : MonoBehaviour
     [Tooltip("How many arrows have to be fired before the markers disappear.")]
     [SerializeField] int m_ShotsToComplete = 3;
 
+    [Tooltip("When off the markers stay hidden. The prologue turns them on only for the bow's turn.")]
+    [SerializeField] bool m_CuesEnabled = true;
+
     static readonly int s_BaseColorId = Shader.PropertyToID("_BaseColor");
     static readonly int s_ColorId = Shader.PropertyToID("_Color");
 
@@ -69,11 +72,27 @@ public class BowTutorial : MonoBehaviour
     {
         bool held = m_Bow != null && m_Bow.IsHeld;
         bool done = m_Measurer != null && m_Measurer.ShotsFired >= m_ShotsToComplete;
+        bool active = m_CuesEnabled && !done;
 
         // Grab first, pull second: the grip marker hands over to the string
         // marker as soon as the bow is being held.
-        UpdateMarker(m_GripMarker, !done && !held);
-        UpdateMarker(m_StringMarker, !done && held);
+        UpdateMarker(m_GripMarker, active && !held);
+        UpdateMarker(m_StringMarker, active && held);
+    }
+
+    /// <summary>
+    /// Turns the markers on or off wholesale. The prologue keeps them off until
+    /// it is the bow's turn, so the bow is not blinking at the same time as
+    /// everything else.
+    /// </summary>
+    public void SetCuesEnabled(bool enabled)
+    {
+        m_CuesEnabled = enabled;
+        if (!enabled)
+        {
+            Hide(m_GripMarker);
+            Hide(m_StringMarker);
+        }
     }
 
     void UpdateMarker(Renderer marker, bool visible)

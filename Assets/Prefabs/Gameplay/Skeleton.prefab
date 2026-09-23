@@ -29,7 +29,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.8, y: 0.8, z: 0.8}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 3165096837899228819}
@@ -60,12 +60,16 @@ MonoBehaviour:
   m_PlayerDamage: 8
   m_RepelFuelThreshold: 0.75
   m_RepelDistance: 4.5
+  m_RepelHysteresis: 1.2
   m_Campfire: {fileID: 0}
   m_Animator: {fileID: 6055788758761064127}
   m_Body: {fileID: 0}
   m_LeftArm: {fileID: 0}
   m_RightArm: {fileID: 0}
   m_Renderers: []
+  m_RunSpeedThreshold: 1.3
+  m_AvoidObstacles: 1
+  m_AvoidSteer: 0.9
   m_BobAmplitude: 0.06
   m_BobFrequency: 6
   m_ArmSwing: 35

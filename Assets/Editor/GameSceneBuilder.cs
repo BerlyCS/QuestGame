@@ -28,6 +28,9 @@ public static class GameSceneBuilder
     const string k_AxeTexturePath = "Assets/Models/Axe/AxeTexture.png";
     const float k_AxeModelScale = 20f;
     const string k_DeathSfxPath = "Assets/Audio/Enemies/lego-breaking.mp3";
+    // Every enemy skeleton is scaled down from its imported size by this factor:
+    // the raw rigs tower over the player's eyeline and read as giants.
+    const float k_EnemyScale = 0.8f;
     // Animated enemy models (the Quaternius rigs that ship with the skeleton
     // pack) and the shared controller that drives all of them. The rig is
     // Generic with no Avatar, so the clips retarget purely by transform path.
@@ -119,6 +122,7 @@ public static class GameSceneBuilder
         Wire(night, "m_SkyMaterial", s_NightSky);
 
         BuildCampReveal(systems, campfire);
+        ConfigurePrologue(systems, campfire);
 
         BuildSkeletonSpawner(systems, rig, campfire);
         BuildLogSpawner(systems, logPile);
@@ -193,12 +197,30 @@ public static class GameSceneBuilder
             CreateThrowProfiles();
         BuildLogPrefab();
 
+        // Rebuild the axe prefab too, so the grip/handedness fix and the new
+        // tutorial cue hookup reach the axe instance already in the scene.
+        s_AxeProfile = AssetDatabase.LoadAssetAtPath<ThrowPhysicsProfile>($"{k_ProfileFolder}/AxeProfile.asset");
+        if (s_AxeProfile == null)
+            CreateThrowProfiles();
+        s_Axe = AssetDatabase.LoadAssetAtPath<Material>($"{k_MaterialFolder}/M_Axe.mat");
+        if (s_Axe == null)
+            s_Axe = CreateTexturedMaterial("M_Axe", k_AxeTexturePath);
+        if (BuildAxePrefab() == null)
+            Debug.LogWarning("[GameSceneBuilder] The axe prefab could not be rebuilt.");
+
         // Existing instances still carry the old cylinder's 90-degree tip-up; the
         // wood model is authored lying down, so drop the pitch and keep the yaw.
+        // They may also predate the hand-grab-only change, so strip any leftover
+        // remote point-and-pull interactables from the scene copies.
         foreach (var log in Object.FindObjectsByType<Log>(FindObjectsInactive.Include, FindObjectsSortMode.None))
         {
             var euler = log.transform.localEulerAngles;
             log.transform.localRotation = Quaternion.Euler(0f, euler.y, 0f);
+
+            foreach (var distance in log.GetComponentsInChildren<DistanceGrabInteractable>(true))
+                Object.DestroyImmediate(distance);
+            foreach (var distance in log.GetComponentsInChildren<DistanceHandGrabInteractable>(true))
+                Object.DestroyImmediate(distance);
         }
 
         // The start target and the treasure it pays for, rebuilt in place.
@@ -207,6 +229,28 @@ public static class GameSceneBuilder
             BuildStartTargetAndTreasure(environment.transform);
         else
             Debug.LogWarning("[GameSceneBuilder] No 'Environment' object; the start target and treasure were not built.");
+
+        // Prologue: dead campfire + the wordless axe -> bow -> logs walk-up that
+        // hands the night over when the fire is first fed.
+        var campfire = Object.FindAnyObjectByType<CampfireFuel>();
+        if (campfire != null)
+        {
+            // The old fuel trigger was a 0.9 m dome that swallowed logs well
+            // outside the stone ring; shrink the instance already in the scene.
+            foreach (var trigger in campfire.GetComponentsInChildren<SphereCollider>(true))
+                if (trigger.gameObject.name == "Fuel Trigger")
+                    trigger.radius = 0.55f;
+        }
+
+        var systems = GameObject.Find("Game Systems");
+        if (systems != null)
+            ConfigurePrologue(systems, campfire);
+        else
+            Debug.LogWarning("[GameSceneBuilder] No 'Game Systems' object; the prologue was not configured.");
+
+        // Strip the old floating guide spheres from anything still carrying them.
+        foreach (var guide in Object.FindObjectsByType<GuideBlink>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            Object.DestroyImmediate(guide);
 
         AssetDatabase.SaveAssets();
         EditorSceneManager.MarkSceneDirty(scene);
@@ -674,7 +718,10 @@ public static class GameSceneBuilder
         trigger.transform.localPosition = new Vector3(0f, 0.3f, 0f);
         var triggerCollider = trigger.AddComponent<SphereCollider>();
         triggerCollider.isTrigger = true;
-        triggerCollider.radius = 0.9f;
+        // Tight enough that the log has to actually be dropped into the fire:
+        // the old 0.9 m dome swallowed logs (and passing hands) well outside the
+        // stone ring.
+        triggerCollider.radius = 0.55f;
 
         Wire(fuel, "m_FireLight", light);
         Wire(fuel, "m_FlameParticles", particles);
@@ -868,9 +915,10 @@ public static class GameSceneBuilder
 
         AddFittedCollider(log);
 
-        // Firewood uses the remote pull-to-hand grab so the player can call a log over
-        // to the fire instead of reaching down to the pile.
-        AddThrowable(log, 0.5f, s_LightThrowProfile, despawn: false, allowDistanceGrab: true);
+        // Firewood is grabbed by hand only. Remote point-and-pull felt unnatural for
+        // logs, so the distance-grab interactables are deliberately left off: the
+        // player has to walk up and take a log, then carry it into the fire.
+        AddThrowable(log, 0.5f, s_LightThrowProfile, despawn: false, allowDistanceGrab: false);
 
         log.AddComponent<Log>();
 
@@ -999,12 +1047,13 @@ public static class GameSceneBuilder
         var root = new GameObject("Skeleton");
         var skeleton = root.AddComponent<Skeleton>();
 
-        var model = AttachSkeletonModel(root, "Skeleton_Warrior", k_CaminanteHeight, k_EnemyWidthFactor, null, null);
+        float height = k_CaminanteHeight * k_EnemyScale;
+        var model = AttachSkeletonModel(root, "Skeleton_Warrior", height, k_EnemyWidthFactor, null, null);
 
         var capsule = root.AddComponent<CapsuleCollider>();
-        capsule.center = new Vector3(0f, k_CaminanteHeight * 0.5f, 0f);
-        capsule.height = k_CaminanteHeight;
-        capsule.radius = 0.3f;
+        capsule.center = new Vector3(0f, height * 0.5f, 0f);
+        capsule.height = height;
+        capsule.radius = 0.3f * k_EnemyScale;
 
         var rigidbody = root.AddComponent<Rigidbody>();
         rigidbody.isKinematic = true;
@@ -1108,17 +1157,16 @@ public static class GameSceneBuilder
     // the player's eye line.
     static readonly Vector3 k_StartTargetPosition = new Vector3(0f, 0f, 5.2f);
     const float k_StartTargetHeight = 1.15f;
-    const string k_StartMessage = "INICIAR JUEGO";
     const string k_TeethMaterialPath = "Assets/Materials/Game/M_Teeth.mat";
     const string k_HowlPath = "Assets/Audio/Ambience/howl_wolf.mp3";
     const string k_NightPath = "Assets/Audio/Ambience/night.mp3";
+    const string k_FireOutPath = "Assets/Audio/Ambience/night_out.ogg";
 
     /// <summary>
-    /// Builds the ceremonial first shot and the treasure it pays for: the
-    /// bullseye board the player shoots to start the night (see
-    /// <see cref="GameStartTarget"/>), the "INICIAR JUEGO" label above it, and
-    /// the gold and chest that drop in beside the campfire when it is hit (see
-    /// <see cref="TreasureReveal"/>).
+    /// Builds the ceremonial target and the treasure it hides: the bullseye
+    /// board behind the campfire, which now just bursts into white particles when
+    /// shot (see <see cref="GameStartTarget"/>), and the gold and chest that drop
+    /// in beside the fire when the night begins (see <see cref="TreasureReveal"/>).
     ///
     /// Idempotent, so it can be re-run over the scene that is already open. It
     /// wires the GameManager when one is present; otherwise it warns and leaves
@@ -1144,11 +1192,6 @@ public static class GameSceneBuilder
         // colliders come off so the arrow flies through them and stops on the
         // block's own box, which is what carries the hit.
         CreateBullseye(startRoot, white, red);
-
-        var label = WorldText.Create(k_StartMessage, new Color(1f, 0.82f, 0.35f), 2f);
-        label.transform.SetParent(startRoot, false);
-        label.transform.localPosition = new Vector3(0f, 1.98f, 0f);
-        label.transform.localRotation = Quaternion.identity;
 
         var treasureRoot = new GameObject("Treasure").transform;
         treasureRoot.SetParent(parent, false);
@@ -1198,12 +1241,8 @@ public static class GameSceneBuilder
         });
 
         var target = block.AddComponent<GameStartTarget>();
-        Wire(target, "m_Label", label);
-        Wire(target, "m_LabelTarget", FindHead());
-        Wire(target, "m_Treasure", reveal);
-        Wire(target, "m_BlockRenderer", block.GetComponent<Renderer>());
         // Without this the rings, which hang off the board root rather than the
-        // block, would stay floating once the night starts.
+        // block, would stay floating once the board vanishes.
         Wire(target, "m_HideRoot", startRoot.gameObject);
 
         var gameManager = Object.FindAnyObjectByType<GameManager>();
@@ -1214,11 +1253,11 @@ public static class GameSceneBuilder
             return;
         }
 
-        Wire(target, "m_GameManager", gameManager);
         Wire(gameManager, "m_ChestRenderer", chestRenderer);
         Wire(gameManager, "m_TeethMaterial", AssetDatabase.LoadAssetAtPath<Material>(k_TeethMaterialPath));
         Wire(gameManager, "m_IntroSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_HowlPath));
         Wire(gameManager, "m_NightSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_NightPath));
+        Wire(gameManager, "m_FireOutSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_FireOutPath));
 
         var serialized = new SerializedObject(gameManager);
         var waitForStart = serialized.FindProperty("m_WaitForStart");
@@ -1342,6 +1381,54 @@ public static class GameSceneBuilder
         for (int i = 0; i < objectsToReveal.Length; i++)
             array.GetArrayElementAtIndex(i).objectReferenceValue = objectsToReveal[i];
         serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>
+    /// Sets up the wordless prologue: the campfire starts dead (fuel 0) so the
+    /// player has to revive it, and a <see cref="PrologueController"/> cues only
+    /// the logs (their own surface glows) until the fire is lit, then hands the
+    /// night to the GameManager and brings in the axe and bow cues. Idempotent,
+    /// so it can re-run over the open scene.
+    /// </summary>
+    static void ConfigurePrologue(GameObject systems, CampfireFuel campfire)
+    {
+        if (campfire != null)
+        {
+            var serialized = new SerializedObject(campfire);
+            var startingFuel = serialized.FindProperty("m_StartingFuel");
+            if (startingFuel != null)
+                startingFuel.floatValue = 0f;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+        else
+        {
+            Debug.LogWarning("[GameSceneBuilder] No CampfireFuel found; the prologue fire was not set dead.");
+        }
+
+        // The dusk/afternoon settings live on the NightEnvironmentController; the
+        // non-destructive Apply never recreates that component, so stamp the
+        // values the prologue needs (an already-serialized older value would
+        // otherwise survive and leave the camp flat-lit).
+        var night = systems.GetComponent<NightEnvironmentController>();
+        if (night != null)
+        {
+            var nightData = new SerializedObject(night);
+            SetValue(nightData, "m_StartInAfternoon", true);
+            SetValue(nightData, "m_DuskDuration", 120f);
+            SetValue(nightData, "m_DuskRushDuration", 5f);
+            SetValue(nightData, "m_DayAmbientIntensity", 0.6f);
+            nightData.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        var prologue = systems.GetComponent<PrologueController>();
+        if (prologue == null)
+            prologue = systems.AddComponent<PrologueController>();
+
+        prologue.Inject(
+            Object.FindAnyObjectByType<GameManager>(),
+            systems.GetComponent<NightEnvironmentController>(),
+            campfire,
+            Object.FindAnyObjectByType<TreasureReveal>());
     }
 
     // To the player's right, close enough to reach without walking, clear of the
@@ -1577,7 +1664,9 @@ public static class GameSceneBuilder
 
         // Grip the handle (local +Z) with the palm, near the butt end. The pose
         // transform's local +X axis is the handle axis the hand wraps around.
-        AddGripHandle(axe, new Vector3(0f, 0f, -0.12f), Quaternion.Euler(0f, 90f, 180f));
+        // (0, 90, 0) is the SDK's right-hand OVR offset; the old (0, 90, 180) is
+        // the left-hand one and made the right hand hold the axe backwards.
+        AddGripHandle(axe, new Vector3(0f, 0f, -0.12f), Quaternion.Euler(0f, 90f, 0f));
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(axe, $"{k_PrefabFolder}/Axe.prefab");
         Object.DestroyImmediate(axe);
@@ -1958,6 +2047,26 @@ public static class GameSceneBuilder
 
         property.objectReferenceValue = value;
         serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>Sets a serialized float, warning (rather than throwing) if the field is gone.</summary>
+    static void SetValue(SerializedObject serialized, string propertyName, float value)
+    {
+        var property = serialized.FindProperty(propertyName);
+        if (property == null)
+            Debug.LogWarning($"[GameSceneBuilder] Float property '{propertyName}' not found; skipped.");
+        else
+            property.floatValue = value;
+    }
+
+    /// <summary>Sets a serialized bool, warning (rather than throwing) if the field is gone.</summary>
+    static void SetValue(SerializedObject serialized, string propertyName, bool value)
+    {
+        var property = serialized.FindProperty(propertyName);
+        if (property == null)
+            Debug.LogWarning($"[GameSceneBuilder] Bool property '{propertyName}' not found; skipped.");
+        else
+            property.boolValue = value;
     }
 
     static void AddToBuildSettings(string scenePath)

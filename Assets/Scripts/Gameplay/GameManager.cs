@@ -23,7 +23,8 @@ using UnityEngine.SceneManagement;
 /// target behind the campfire (see <see cref="GameStartTarget"/>).
 ///
 /// Fire outage (not a loss): when the campfire goes out
-/// (CampfireFuel.OnExtinguished) the survival clock pauses, the laugh plays,
+/// (CampfireFuel.OnExtinguished) the survival clock pauses, the fire-out
+/// sting plays,
 /// the Caminantes and Lanzahuesos retreat off into the dark, and a faster,
 /// tougher swarm of Cazadores replaces them. Relighting the fire
 /// (CampfireFuel.OnIgnited) kills the swarm with the lego-breaking sound and
@@ -47,9 +48,12 @@ public class GameManager : MonoBehaviour
     [Header("Defeat")]
     [SerializeField] float m_DefeatFadeDuration = 1.5f;
     [SerializeField] float m_DefeatRestartDelay = 5f;
-    [Tooltip("Sinister laugh: plays when the campfire dies and again when the player dies. " +
+    [Tooltip("Sinister laugh: plays when the player dies. " +
         "Falls back to the procedural laugh when empty.")]
     [SerializeField] AudioClip m_LaughSfx;
+    [Tooltip("Plays once when the campfire dies (the fire outage, not a loss). " +
+        "Falls back to the laugh when empty.")]
+    [SerializeField] AudioClip m_FireOutSfx;
 
     [Header("Opening")]
     [Tooltip("Holds the night until the player shoots the start target behind the campfire " +
@@ -183,7 +187,7 @@ public class GameManager : MonoBehaviour
             return;
 
         m_FireOut = true;
-        Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
+        Play2DSound(m_FireOutSfx != null ? m_FireOutSfx : (m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh));
 
         // The Caminantes and Lanzahuesos walk off and vanish; only the red
         // swarm is left hunting the player.

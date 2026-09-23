@@ -5,7 +5,11 @@ using UnityEngine.Rendering;
 /// <summary>
 /// Two things drive the world's light. The campfire's fuel darkens it as the
 /// fire dies (the fire is the main light source; the moon only gives a faint
-/// cold rim). And the survival clock (GameManager.SurvivalNormalized) slowly
+/// cold rim). The prologue opens in late afternoon - a warm directional sun
+/// under an orange-to-purple sky dome (the same dome the dawn reuses) - and the
+/// dusk bleeds that into night over <see cref="m_DuskDuration"/>, hurried to
+/// <see cref="m_DuskRushDuration"/> once the fire is fed; the blood moon then
+/// opens the night. And the survival clock (GameManager.SurvivalNormalized) slowly
 /// brings the dawn in across the whole 360 degrees: the night sky warms up,
 /// the moon fills out from a dark disc to a full one, a low-poly sun climbs
 /// into the sky, ambient light and fog brighten together and a chorus of
@@ -97,6 +101,47 @@ public class NightEnvironmentController : MonoBehaviour
     [Tooltip("Night progress (0-1) at which the moon starts to hide; gone just before the sun shows.")]
     [SerializeField] float m_MoonHideAt = 0.9f;
 
+    [Header("Prologue dusk (afternoon -> night)")]
+    [Tooltip("When on, the world opens in late afternoon and darkens over Dusk Duration; off starts at night.")]
+    [SerializeField] bool m_StartInAfternoon = true;
+    [Tooltip("Seconds the afternoon takes to bleed into night on its own.")]
+    [SerializeField] float m_DuskDuration = 120f;
+    [Tooltip("Seconds the dusk takes to finish once the prologue rushes it (the first log in the fire).")]
+    [SerializeField] float m_DuskRushDuration = 5f;
+    [SerializeField] Color m_DayAmbient = new Color(0.62f, 0.58f, 0.5f);
+    [Tooltip("Kept low so the afternoon sun (not flat ambient) defines the shading; " +
+        "a high ambient washes the props back out to solid colour.")]
+    [SerializeField] float m_DayAmbientIntensity = 0.6f;
+    [SerializeField] float m_DaySkyExposure = 0.9f;
+    [SerializeField] Color m_DaySkyTint = new Color(0.85f, 0.88f, 0.96f);
+    [SerializeField] Color m_DayGroundColor = new Color(0.34f, 0.31f, 0.25f);
+    [SerializeField] Color m_DayFogColor = new Color(0.63f, 0.64f, 0.62f);
+    [SerializeField] float m_DayFogDensity = 0.003f;
+
+    [Header("Afternoon sun (prologue lighting)")]
+    [Tooltip("Directional light that stands in for the late-afternoon sun. Created at runtime when empty.")]
+    [SerializeField] Light m_DayLight;
+    [Tooltip("Sun intensity at the brightest point of the afternoon.")]
+    [SerializeField] float m_DaySunIntensity = 1.7f;
+    [Tooltip("Sun colour while it is still fairly high (early afternoon).")]
+    [SerializeField] Color m_DaySunColorHigh = new Color(1f, 0.82f, 0.55f);
+    [Tooltip("Sun colour as it sinks to the horizon (6 pm): the warm sunset red.")]
+    [SerializeField] Color m_DaySunColorLow = new Color(1f, 0.45f, 0.2f);
+    [Tooltip("Sun pitch (degrees above the horizon) at the start of the afternoon.")]
+    [SerializeField] float m_DaySunPitchHigh = 20f;
+    [Tooltip("Sun pitch (degrees) once the night has fallen; negative is below the horizon.")]
+    [SerializeField] float m_DaySunPitchLow = -6f;
+    [Tooltip("Compass heading the afternoon sun sits at: 180 = the +Z horizon the player faces.")]
+    [SerializeField] float m_DaySunYaw = 180f;
+
+    [Header("Blood moon (night opening)")]
+    [Tooltip("Seconds the moon takes to swell from white to a very bright blood red.")]
+    [SerializeField] float m_BloodMoonRise = 4.5f;
+    [Tooltip("Seconds of the 1/x recovery the moon takes to whiten back. Set near the night length.")]
+    [SerializeField] float m_BloodMoonRecover = 150f;
+    [Tooltip("Extra emission multiplier at the reddest point, so the moon visibly blows out.")]
+    [SerializeField] float m_BloodMoonPeak = 1.6f;
+
     [Header("Rising sun")]
     [SerializeField] bool m_BuildSun = true;
     [Tooltip("Optional sun material. Left empty, a fog-free material is built at Awake.")]
@@ -124,6 +169,16 @@ public class NightEnvironmentController : MonoBehaviour
         "beyond the sun/moon so they stay visible in front of it.")]
     [SerializeField] float m_DawnSkyRadius = 800f;
 
+    [Header("Afternoon sky dome")]
+    [Tooltip("Colour the afternoon sky settles to at the horizon (the sunset band).")]
+    [SerializeField] Color m_DaySkyHorizon = new Color(1f, 0.5f, 0.24f);
+    [Tooltip("Colour the afternoon sky settles to overhead (dusky purple).")]
+    [SerializeField] Color m_DaySkyZenith = new Color(0.24f, 0.2f, 0.48f);
+    [SerializeField] Color m_DaySkyGlow = new Color(1f, 0.68f, 0.34f);
+    [SerializeField] float m_DaySkyGlowStrength = 1f;
+    [Tooltip("How solidly the afternoon dome covers the skybox underneath.")]
+    [Range(0f, 1f)] [SerializeField] float m_DaySkyAlpha = 0.98f;
+
     [Header("Dawn birds (placeholder)")]
     [Tooltip("Fades in as the sky brightens. Left empty, the generated birdsong is used.")]
     [SerializeField] AudioClip m_DawnBirds;
@@ -132,6 +187,11 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] float m_DawnBirdsStart = 0.25f;
 
     float? m_ForcedNormalized;
+    float m_Dusk;
+    bool m_DuskRushing;
+    bool m_BloodMoon;
+    float m_BloodMoonStart;
+    float m_Afternoon;
 
     Material m_MoonMaterial;
     Transform m_Sun;
@@ -139,6 +199,7 @@ public class NightEnvironmentController : MonoBehaviour
     Material m_SunMaterialInstance;
     Transform m_DawnSky;
     Material m_DawnSkyMaterial;
+    Material m_SkyInstance;
     AudioSource m_BirdsSource;
 
     /// <summary>
@@ -153,9 +214,52 @@ public class NightEnvironmentController : MonoBehaviour
         set => m_ForcedNormalized = value;
     }
 
+    /// <summary>True once the afternoon has fully bled into night.</summary>
+    public bool DuskComplete => m_Dusk >= 1f;
+
+    /// <summary>Whether this controller opened in the afternoon (the prologue).</summary>
+    public bool StartedInAfternoon => m_StartInAfternoon;
+
+    /// <summary>
+    /// Accelerates the remaining dusk so the sky snaps to night in a few
+    /// seconds. Called when the player first feeds the fire.
+    /// </summary>
+    public void BeginDuskRush()
+    {
+        m_DuskRushing = true;
+    }
+
+    /// <summary>
+    /// Starts the blood-moon opening: bright red in a few seconds, then a long
+    /// 1/x whitening across the night. Idempotent, and fired automatically the
+    /// moment the dusk finishes (so the moon still opens the night for a player
+    /// who never feeds the fire).
+    /// </summary>
+    public void TriggerBloodMoon()
+    {
+        if (m_BloodMoon)
+            return;
+
+        m_BloodMoon = true;
+        m_BloodMoonStart = Time.time;
+    }
+
     void Awake()
     {
+        m_Dusk = m_StartInAfternoon ? 0f : 1f;
         CacheMoon();
+
+        // Animate a per-controller copy of the skybox. Writing the exposure/tint
+        // straight into m_SkyMaterial (the shared asset assigned in the scene)
+        // dirtied the committed material every time the game ran in the editor.
+        if (m_SkyMaterial != null)
+        {
+            m_SkyInstance = new Material(m_SkyMaterial) { name = m_SkyMaterial.name + " (Runtime)" };
+            m_SkyMaterial = m_SkyInstance;
+            RenderSettings.skybox = m_SkyInstance;
+        }
+
+        BuildDayLight();
         BuildSun();
         BuildDawnSky();
         BuildBirds();
@@ -164,6 +268,21 @@ public class NightEnvironmentController : MonoBehaviour
 
     void Update()
     {
+        // Afternoon -> night: slow on its own, fast once the prologue rushes it.
+        if (m_DuskRushing)
+        {
+            m_Dusk = Mathf.MoveTowards(m_Dusk, 1f, Time.deltaTime / Mathf.Max(0.05f, m_DuskRushDuration));
+        }
+        else if (m_StartInAfternoon && m_Dusk < 1f)
+        {
+            m_Dusk = Mathf.MoveTowards(m_Dusk, 1f, Time.deltaTime / Mathf.Max(0.05f, m_DuskDuration));
+        }
+
+        // The moon opens the night the moment dusk finishes, whether the player
+        // rushed it with a log or simply let the two minutes run out.
+        if (m_StartInAfternoon && m_Dusk >= 1f)
+            TriggerBloodMoon();
+
         float n = m_ForcedNormalized ?? (m_Campfire != null ? m_Campfire.FuelNormalized : 0f);
         Apply(n);
     }
@@ -174,6 +293,8 @@ public class NightEnvironmentController : MonoBehaviour
             Destroy(m_SunMaterialInstance);
         if (m_DawnSkyMaterial != null)
             Destroy(m_DawnSkyMaterial);
+        if (m_SkyInstance != null)
+            Destroy(m_SkyInstance);
     }
 
     void Apply(float normalized)
@@ -209,6 +330,11 @@ public class NightEnvironmentController : MonoBehaviour
         normalized = Mathf.Clamp01(normalized);
         dawn = Mathf.Clamp01(dawn);
         survival = Mathf.Clamp01(survival);
+
+        // 1 = full afternoon, 0 = full night. Every value below is computed as
+        // night and then lifted toward daylight by this, so the prologue dusk is
+        // a single blend on top of the established night look.
+        m_Afternoon = 1f - Mathf.Clamp01(m_Dusk);
 
         // The defeat fade (forced toward 0) must still take the sky to black.
         float blackout = m_ForcedNormalized.HasValue ? Mathf.Clamp01(m_ForcedNormalized.Value) : 1f;
@@ -257,6 +383,78 @@ public class NightEnvironmentController : MonoBehaviour
             if (m_SkyMaterial.HasProperty("_Tint"))
                 m_SkyMaterial.SetColor("_Tint", Color.Lerp(m_SkyTintNight, m_SkyTintDawn, dawn));
         }
+
+        ApplyDaylight(blackout);
+    }
+
+    /// <summary>
+    /// Lifts the night look toward the late-afternoon opening. Runs last so it
+    /// simply overrides whichever night value was just written; when the dusk
+    /// finishes (<see cref="m_Dusk"/> = 1) the ambient/fog/sky blends are no-ops,
+    /// while the sun is switched fully off.
+    /// </summary>
+    void ApplyDaylight(float blackout)
+    {
+        float afternoon = Mathf.Clamp01(m_Afternoon);
+
+        if (afternoon > 0.001f)
+        {
+            RenderSettings.ambientLight = Color.Lerp(RenderSettings.ambientLight, m_DayAmbient, afternoon);
+            RenderSettings.ambientIntensity = Mathf.Lerp(RenderSettings.ambientIntensity, m_DayAmbientIntensity, afternoon) * blackout;
+            RenderSettings.fog = m_UseFog;
+            RenderSettings.fogColor = Color.Lerp(RenderSettings.fogColor, m_DayFogColor, afternoon) * blackout;
+
+            // The fire-out darkness fog is a night effect, so it must not creep in
+            // across the whole dusk: blending it linearly by the afternoon closed the
+            // world into a wall of fog within seconds of the afternoon starting.
+            // Ease it on the night side so the afternoon stays clear and the fog only
+            // gathers once night is actually falling.
+            float night = 1f - afternoon;
+            float nightFog = night * night * night;
+            RenderSettings.fogDensity = Mathf.Lerp(m_DayFogDensity, RenderSettings.fogDensity, nightFog);
+
+            // No moon and no directional moonlight while the sun is still up.
+            if (m_MoonLight != null)
+                m_MoonLight.intensity *= 1f - afternoon;
+
+            if (m_SkyMaterial != null)
+            {
+                if (m_SkyMaterial.HasProperty("_Exposure"))
+                    m_SkyMaterial.SetFloat("_Exposure", Mathf.Lerp(m_SkyMaterial.GetFloat("_Exposure"), m_DaySkyExposure, afternoon) * blackout);
+                if (m_SkyMaterial.HasProperty("_Tint"))
+                    m_SkyMaterial.SetColor("_Tint", Color.Lerp(m_SkyMaterial.GetColor("_Tint"), m_DaySkyTint, afternoon));
+                if (m_SkyMaterial.HasProperty("_GroundColor"))
+                    m_SkyMaterial.SetColor("_GroundColor", Color.Lerp(m_SkyMaterial.GetColor("_GroundColor"), m_DayGroundColor, afternoon));
+            }
+        }
+
+        ApplyDaySun(afternoon, blackout);
+    }
+
+    /// <summary>
+    /// Drives the late-afternoon sun. It is the only directional light while the
+    /// sky is bright - without it the camp is lit by flat ambient alone and the
+    /// props read as untextured solid colour - so it sinks and warms as the dusk
+    /// runs, then switches off entirely once night falls.
+    /// </summary>
+    void ApplyDaySun(float afternoon, float blackout)
+    {
+        if (m_DayLight == null)
+            return;
+
+        float intensity = m_DaySunIntensity * Mathf.SmoothStep(0f, 1f, afternoon) * blackout;
+        m_DayLight.enabled = intensity > 0.002f;
+
+        if (!m_DayLight.enabled)
+        {
+            m_DayLight.intensity = 0f;
+            return;
+        }
+
+        m_DayLight.intensity = intensity;
+        m_DayLight.color = Color.Lerp(m_DaySunColorLow, m_DaySunColorHigh, afternoon);
+        float pitch = Mathf.Lerp(m_DaySunPitchLow, m_DaySunPitchHigh, afternoon);
+        m_DayLight.transform.rotation = Quaternion.Euler(pitch, m_DaySunYaw, 0f);
     }
 
     void CacheMoon()
@@ -286,22 +484,56 @@ public class NightEnvironmentController : MonoBehaviour
         if (m_MoonMaterial == null)
             return;
 
-        // New moon as the night starts, fills out to a blood red disc, then
-        // slowly whitens into the full moon, and finally hides just before the
-        // sun comes up. Follows the whole survival clock (not just the compressed
-        // dawn curve) so it reads as a smooth progress indicator, and is the only
-        // progress readout the game has (see the cero-UI rule).
-        float fill = Mathf.InverseLerp(0f, m_MoonRedAt, survival);
-        float whiten = Mathf.InverseLerp(m_MoonRedAt, m_MoonWhiteAt, survival);
+        Color color;
+        Color emission;
 
-        Color color = Color.Lerp(m_MoonColorNew, m_MoonColorRed, fill);
-        Color emission = Color.Lerp(m_MoonEmissionNew, m_MoonEmissionRed, fill);
-        color = Color.Lerp(color, m_MoonColorFull, whiten);
-        emission = Color.Lerp(emission, m_MoonEmissionFull, whiten);
+        if (m_BloodMoon)
+        {
+            // Night opening: the moon swells from white to a blinding blood red
+            // in a few seconds, then whitens back on a 1/x curve spread across
+            // the night, so the change is unmistakable and the player watches it
+            // turn white again.
+            float t = Time.time - m_BloodMoonStart;
+            float rise = Mathf.InverseLerp(0f, Mathf.Max(0.05f, m_BloodMoonRise), t);
+            color = Color.Lerp(m_MoonColorFull, m_MoonColorRed, rise);
+            emission = Color.Lerp(m_MoonEmissionFull, m_MoonEmissionRed, rise);
+
+            if (t > m_BloodMoonRise)
+            {
+                float x = (t - m_BloodMoonRise) / Mathf.Max(1f, m_BloodMoonRecover);
+                float redness = 1f / (1f + 5f * x); // 1 at the peak, easing to 0
+                color = Color.Lerp(m_MoonColorFull, color, redness);
+                emission = Color.Lerp(m_MoonEmissionFull, emission, redness);
+            }
+
+            // A brief over-bright at the reddest point so the moon visibly blows out.
+            emission *= Mathf.Lerp(1f, m_BloodMoonPeak, 1f - Mathf.Abs(rise - 1f));
+        }
+        else
+        {
+            // New moon as the night starts, fills out to a blood red disc, then
+            // slowly whitens into the full moon, and finally hides just before the
+            // sun comes up. Follows the whole survival clock (not just the compressed
+            // dawn curve) so it reads as a smooth progress indicator, and is the only
+            // progress readout the game has (see the cero-UI rule).
+            float fill = Mathf.InverseLerp(0f, m_MoonRedAt, survival);
+            float whiten = Mathf.InverseLerp(m_MoonRedAt, m_MoonWhiteAt, survival);
+
+            color = Color.Lerp(m_MoonColorNew, m_MoonColorRed, fill);
+            emission = Color.Lerp(m_MoonEmissionNew, m_MoonEmissionRed, fill);
+            color = Color.Lerp(color, m_MoonColorFull, whiten);
+            emission = Color.Lerp(emission, m_MoonEmissionFull, whiten);
+        }
 
         float hide = 1f - Mathf.InverseLerp(m_MoonHideAt, 1f, survival);
-        color *= hide;
-        emission *= hide * blackout;
+
+        // The disc is opaque, so darkening its colour cannot fade it out - a
+        // "faded" new moon just paints a hard black hole in the bright afternoon
+        // sky. Keep it out of the sky entirely until the dusk has fully fallen;
+        // the blood moon opens the night at that same moment, so nothing pops.
+        float visible = m_Afternoon > 0.001f ? 0f : hide;
+        color *= visible;
+        emission *= visible * blackout;
 
         if (m_MoonMaterial.HasProperty("_BaseColor"))
             m_MoonMaterial.SetColor("_BaseColor", color);
@@ -311,7 +543,30 @@ public class NightEnvironmentController : MonoBehaviour
             m_MoonMaterial.SetColor("_EmissionColor", emission);
 
         if (m_MoonRenderer != null)
-            m_MoonRenderer.enabled = hide > 0.01f && blackout > 0.01f;
+            m_MoonRenderer.enabled = visible > 0.01f && blackout > 0.01f;
+    }
+
+    /// <summary>
+    /// Creates the afternoon directional light when the scene did not supply one.
+    /// Built at runtime so the prologue lighting works on any scene the controller
+    /// is dropped into, without a separate scene object to wire.
+    /// </summary>
+    void BuildDayLight()
+    {
+        if (m_DayLight != null)
+            return;
+
+        var go = new GameObject("Afternoon Sun");
+        go.transform.SetParent(transform, false);
+
+        var light = go.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = m_DaySunColorHigh;
+        light.intensity = m_DaySunIntensity;
+        light.shadows = LightShadows.Soft;
+        light.shadowStrength = 0.85f;
+
+        m_DayLight = light;
     }
 
     void BuildSun()
@@ -429,12 +684,27 @@ public class NightEnvironmentController : MonoBehaviour
         if (m_DawnSkyMaterial == null || m_DawnSky == null)
             return;
 
-        Vector3 sunDirection = m_MoonLight != null ? -m_MoonLight.transform.forward : Vector3.up;
-        m_DawnSkyMaterial.SetVector("_SunDirection", sunDirection);
-
-        float alpha = Mathf.SmoothStep(0f, 1f, dawn) * blackout;
+        // The same dome serves both ends of the day: the warm afternoon sunset
+        // (driven by how much daylight is left) and the dawn. Whichever is
+        // stronger shows; the palette is blended toward the afternoon one.
+        float dayAlpha = Mathf.SmoothStep(0f, 1f, m_Afternoon) * m_DaySkyAlpha;
+        float dawnAlpha = Mathf.SmoothStep(0f, 1f, dawn);
+        float alpha = Mathf.Max(dayAlpha, dawnAlpha) * blackout;
         m_DawnSkyMaterial.SetFloat("_Alpha", alpha);
         m_DawnSky.gameObject.SetActive(alpha > 0.002f);
+        if (!m_DawnSky.gameObject.activeSelf)
+            return;
+
+        m_DawnSkyMaterial.SetColor("_HorizonColor", Color.Lerp(m_DawnSkyHorizon, m_DaySkyHorizon, m_Afternoon));
+        m_DawnSkyMaterial.SetColor("_ZenithColor", Color.Lerp(m_DawnSkyZenith, m_DaySkyZenith, m_Afternoon));
+        m_DawnSkyMaterial.SetColor("_SunGlowColor", Color.Lerp(m_DawnSkyGlow, m_DaySkyGlow, m_Afternoon));
+        m_DawnSkyMaterial.SetFloat("_SunGlowStrength", Mathf.Lerp(m_DawnSkyGlowStrength, m_DaySkyGlowStrength, m_Afternoon));
+
+        // The glow gathers around whichever body is currently the sun: the
+        // afternoon directional light, or the moon doubling as the dawn sun.
+        Transform sun = m_Afternoon > 0.5f && m_DayLight != null ? m_DayLight.transform : (m_MoonLight != null ? m_MoonLight.transform : null);
+        Vector3 sunDirection = sun != null ? -sun.forward : Vector3.up;
+        m_DawnSkyMaterial.SetVector("_SunDirection", sunDirection);
     }
 
     void BuildBirds()

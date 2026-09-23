@@ -25,6 +25,7 @@ public static class WireEnemySystems
     const string k_TeethMaterialPath = "Assets/Materials/Game/M_Teeth.mat";
     const string k_VignetteMaterialPath = "Assets/Materials/Game/M_DamageVignette.mat";
     const string k_SkyMaterialPath = "Assets/Day-Night Skyboxes/Materials/SkyMidnight.mat";
+    const string k_FireOutClipPath = "Assets/Audio/Ambience/night_out.ogg";
 
     [MenuItem("Tools/Game/Wire Enemy Systems")]
     public static void Wire()
@@ -111,6 +112,7 @@ public static class WireEnemySystems
         SetRef(gameManager, "m_SkeletonSpawner", skeletonSpawner);
         SetRef(gameManager, "m_BoneThrowerSpawner", boneSpawner);
         SetRef(gameManager, "m_HunterSpawner", hunterSpawner);
+        SetRef(gameManager, "m_FireOutSfx", AssetDatabase.LoadAssetAtPath<AudioClip>(k_FireOutClipPath));
         if (playerHealth != null)
             SetRef(gameManager, "m_PlayerHealth", playerHealth);
         var teeth = AssetDatabase.LoadAssetAtPath<Material>(k_TeethMaterialPath);

@@ -1,67 +1,39 @@
-using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// The ceremonial first shot: a block standing behind the campfire with a
-/// floating "INICIAR JUEGO" label. The night does not begin on scene load - the
-/// wolf howl, the survival clock and the enemy spawners all wait for the arrow
-/// that lands on this block (see <see cref="IArrowHittable"/>), so the player
-/// has to shoot to start. It doubles as the last step of the bow's tutorial.
+/// A ceremonial prop, no longer a gate: the bullseye board standing behind the
+/// campfire. An arrow that lands on it makes the board vanish in a puff of
+/// white particles - a satisfying bit of target practice for the player's first
+/// shots - but it no longer starts the night. The night is handed over by the
+/// fire being fed (see <see cref="PrologueController"/> and
+/// <see cref="GameManager.BeginNight"/>).
 ///
-/// On the hit the treasure drops beside the fire (see <see cref="TreasureReveal"/>)
-/// and, after <see cref="m_HideDelay"/>, the whole board - block, bullseye and
-/// label - steps out of the way so the sightline into the forest is clear.
+/// The hit is delivered by <see cref="IArrowHittable"/>, so the board needs a
+/// non-trigger collider on the default layer (wired by GameSceneBuilder).
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider))]
 public class GameStartTarget : MonoBehaviour, IArrowHittable
 {
     [Header("References")]
-    [Tooltip("The floating label above the block. Hidden once the night starts.")]
-    [SerializeField] GameObject m_Label;
-    [Tooltip("The whole board: block, bullseye rings and label. Hidden once the night starts. " +
-             "Leave empty to hide the block's parent, so the rings go with the block.")]
+    [Tooltip("The whole board: block, bullseye rings and label. Vanishes on the hit. " +
+             "Leave empty to vanish the block's parent.")]
     [SerializeField] GameObject m_HideRoot;
-    [Tooltip("What the label faces. Defaults to the main camera.")]
-    [SerializeField] Transform m_LabelTarget;
-    [SerializeField] GameManager m_GameManager;
-    [SerializeField] TreasureReveal m_Treasure;
-    [Tooltip("Pulsed when the arrow lands. Optional.")]
-    [SerializeField] Renderer m_BlockRenderer;
 
     [Header("On hit")]
-    [Tooltip("Seconds the struck block stays up before it is hidden.")]
-    [SerializeField] float m_HideDelay = 1.4f;
+    [Tooltip("Seconds the struck board stays up before it vanishes.")]
+    [SerializeField] float m_HideDelay = 0.35f;
     [Tooltip("Optional extra sound on the hit. The arrow plays its own impact.")]
     [SerializeField] AudioClip m_HitSfx;
 
-    bool m_Started;
-    MaterialPropertyBlock m_BlockProperties;
+    bool m_Hit;
 
-    /// <summary>True once an arrow has landed: the night is running.</summary>
-    public bool HasStarted => m_Started;
-
-    void Awake()
-    {
-        m_BlockProperties = new MaterialPropertyBlock();
-    }
-
-    /// <summary>Called by the arrow that lands on the block.</summary>
+    /// <summary>Called by the arrow that lands on the board.</summary>
     public void Hit(Arrow arrow)
     {
-        BeginNight();
-    }
-
-    /// <summary>
-    /// Starts the night: treasure, clock and spawners. Idempotent, so a second
-    /// arrow changes nothing. Public so editor tooling (and DebugKeys) can also
-    /// trigger it.
-    /// </summary>
-    public void BeginNight()
-    {
-        if (m_Started)
+        if (m_Hit)
             return;
-        m_Started = true;
+        m_Hit = true;
 
         if (m_HitSfx != null)
         {
@@ -71,53 +43,58 @@ public class GameStartTarget : MonoBehaviour, IArrowHittable
             source.PlayOneShot(m_HitSfx);
         }
 
-        if (m_BlockRenderer != null)
-        {
-            m_BlockRenderer.GetPropertyBlock(m_BlockProperties);
-            m_BlockProperties.SetColor("_EmissionColor", new Color(1f, 0.55f, 0.15f) * 2f);
-            m_BlockRenderer.SetPropertyBlock(m_BlockProperties);
-        }
-
-        if (m_Treasure != null)
-            m_Treasure.Reveal();
-
-        if (m_GameManager != null)
-            m_GameManager.BeginNight();
-
-        StartCoroutine(HideAfterDelay());
+        SpawnWhiteBurst(transform.position + Vector3.up * 1.15f);
+        Invoke(nameof(Vanish), Mathf.Max(0f, m_HideDelay));
     }
 
-    void Update()
+    void Vanish()
     {
-        if (m_Label == null || !m_Label.activeSelf)
-            return;
-
-        Transform target = m_LabelTarget != null
-            ? m_LabelTarget
-            : (Camera.main != null ? Camera.main.transform : null);
-        if (target == null)
-            return;
-
-        // The readable face of a world canvas points opposite its forward, so
-        // aim the forward from the viewer out through the label.
-        Vector3 forward = Vector3.ProjectOnPlane(m_Label.transform.position - target.position, Vector3.up);
-        if (forward.sqrMagnitude > 0.0001f)
-            m_Label.transform.rotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
-    }
-
-    IEnumerator HideAfterDelay()
-    {
-        yield return new WaitForSeconds(m_HideDelay);
-
-        if (m_Label != null)
-            m_Label.SetActive(false);
-
-        // The block alone is not the whole target: the bullseye rings hang off the
-        // board root, so hiding only this object would leave them floating in the
-        // air. Take the whole board down.
         var board = m_HideRoot != null
             ? m_HideRoot
             : (transform.parent != null ? transform.parent.gameObject : gameObject);
         board.SetActive(false);
+    }
+
+    /// <summary>
+    /// A short, collider-free puff of white sparks so the board reads as
+    /// disintegrating rather than merely switching off.
+    /// </summary>
+    static void SpawnWhiteBurst(Vector3 position)
+    {
+        var go = new GameObject("Target Burst");
+        go.transform.position = position;
+
+        var particles = go.AddComponent<ParticleSystem>();
+        var main = particles.main;
+        main.duration = 0.4f;
+        main.loop = false;
+        main.startLifetime = 0.85f;
+        main.startSpeed = 2.6f;
+        main.startSize = 0.07f;
+        main.gravityModifier = 0.35f;
+        main.startColor = Color.white;
+        main.playOnAwake = true;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+        var emission = particles.emission;
+        emission.rateOverTime = 0f;
+        emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 48) });
+
+        var shape = particles.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 0.18f;
+
+        var renderer = go.GetComponent<ParticleSystemRenderer>();
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
+            ?? Shader.Find("Sprites/Default")
+            ?? Shader.Find("Universal Render Pipeline/Unlit");
+        var material = new Material(shader) { name = "M_TargetBurst (Runtime)" };
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", Color.white);
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", Color.white);
+        renderer.material = material;
+
+        Object.Destroy(go, main.duration + main.startLifetime.constant + 0.5f);
     }
 }

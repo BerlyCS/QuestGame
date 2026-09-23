@@ -206,6 +206,27 @@ MonoBehaviour:
   m_SecondsAfterResting: 3
   m_MaxFlightSeconds: 15
   m_RestSpeedThreshold: 0.25
+--- !u!114 &1153055199938763642
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1212331566851920853}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d1606210b530a440bbc92ae23819097, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyBanisher
+  m_Radius: 0.4
+  m_EnemyLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_BanishHapticAmplitude: 0.55
+  m_BanishHapticDuration: 0.09
+  m_ThrownDamage: 1
+  m_RestingDelay: 0.25
+  m_RestSpeedThreshold: 0.35
 --- !u!1 &2293197932635044750
 GameObject:
   m_ObjectHideFlags: 0
@@ -321,13 +342,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9162602726993006846}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0.7071068, w: 0}
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
   m_LocalPosition: {x: 0, y: 0, z: -0.12}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6272906126558542976}
-  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 180}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!114 &2012422220649798331
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -392,21 +413,3 @@ MonoBehaviour:
   _ghostProvider: {fileID: 0}
   _handGhostProvider: {fileID: 0}
   _ovrOffsetMode: 0
---- !u!114 &1153055199938763642
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1212331566851920853}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8d1606210b530a440bbc92ae23819097, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::EnemyBanisher
-  m_Radius: 0.4
-  m_EnemyLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_BanishHapticAmplitude: 0.55
-  m_BanishHapticDuration: 0.09
