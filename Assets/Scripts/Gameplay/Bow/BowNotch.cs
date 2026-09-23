@@ -113,6 +113,28 @@ public class BowNotch : MonoBehaviour
         m_NockedArrow = null;
     }
 
+    /// <summary>
+    /// Glues the nocked arrow to the string middle so it is drawn back together
+    /// with the string. Re-parents defensively in case grabbing the arrow moved
+    /// it elsewhere, which is what used to leave it stuck at its rest position.
+    /// </summary>
+    public void SyncNockedArrow()
+    {
+        if (m_NockedArrow == null || m_StringMiddle == null)
+        {
+            return;
+        }
+
+        Transform arrow = m_NockedArrow.transform;
+        if (arrow.parent != m_StringMiddle)
+        {
+            arrow.SetParent(m_StringMiddle, true);
+        }
+
+        arrow.localPosition = Vector3.zero;
+        arrow.localRotation = Quaternion.identity;
+    }
+
     public void InjectReferences(Bow bow, Transform stringMiddle)
     {
         m_Bow = bow;

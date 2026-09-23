@@ -133,8 +133,6 @@ public class HunterSpawner : MonoBehaviour
         }
         skeleton.OnDied.AddListener(() => m_Alive = Mathf.Max(0, m_Alive - 1));
 
-        PlayAppearSfx(position);
-
         m_Spawned++;
         m_Alive++;
     }
