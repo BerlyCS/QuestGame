@@ -421,12 +421,15 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     }
 
     /// <summary>
-    /// Sent away when the campfire dies (see GameManager's outage): the
-    /// skeleton stops counting as hittable, turns away from the fire, walks off
-    /// and then disappears. OnDied still fires on the way out so the spawners
-    /// keep their alive counts straight.
+    /// Sent away when the campfire dies (see GameManager's outage) or when the
+    /// Coronado's entrance clears the field (see BossIntro): the skeleton stops
+    /// counting as hittable, turns away and walks off, then disappears. OnDied
+    /// still fires on the way out so the spawners keep their alive counts
+    /// straight. With <paramref name="direction"/> given (BossIntro sends every
+    /// skeleton the same way, north into the fog) that direction is used as-is;
+    /// left null, it falls back to away-from-the-threat like before.
     /// </summary>
-    public void Retreat()
+    public void Retreat(Vector3? direction = null)
     {
         if (m_Retreating || !IsAlive)
             return;
@@ -434,6 +437,14 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         m_Retreating = true;
         m_Hits = 0;
         m_RetreatEndTime = Time.time + m_RetreatDuration;
+
+        if (direction.HasValue)
+        {
+            Vector3 fixedDirection = direction.Value;
+            fixedDirection.y = 0f;
+            m_RetreatDirection = fixedDirection.sqrMagnitude > 0.0001f ? fixedDirection.normalized : -transform.forward;
+            return;
+        }
 
         Vector3 source = m_HuntsPlayer && m_Player != null && m_Player.Head != null
             ? m_Player.Head.position

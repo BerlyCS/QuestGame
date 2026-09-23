@@ -9,7 +9,7 @@ public static class ProceduralSfx
 {
     const int k_SampleRate = 44100;
 
-    static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh, s_TreasureLand;
+    static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh, s_TreasureLand, s_CoronadoScream, s_CoronadoBreath;
     static AudioClip s_FireImpact, s_FireLowFuel, s_SkeletonStep, s_SkeletonHit;
 
     /// <summary>Dull wooden knock: the log settling into the hand.</summary>
@@ -49,6 +49,16 @@ public static class ProceduralSfx
 
     /// <summary>Gold spilling onto the ground: a scatter of bright metallic ticks (~1.1 s).</summary>
     public static AudioClip TreasureLand => s_TreasureLand ??= BuildTreasureLand();
+
+    /// <summary>The Coronado taking an ember hit: a harsh shriek falling from a shout to a growl (~0.4 s).</summary>
+    public static AudioClip CoronadoScream => s_CoronadoScream ??= BuildCoronadoScream();
+
+    /// <summary>
+    /// The Coronado's breathing: a low, grave, continuous loop (~3.2 s cycle) -
+    /// the main localization channel (see JEFE_FINAL.md 6). Meant to be played
+    /// on a 3D AudioSource so the player can turn toward it by ear alone.
+    /// </summary>
+    public static AudioClip CoronadoBreath => s_CoronadoBreath ??= BuildCoronadoBreath();
 
     /// <summary>Fire-and-forget 3D one-shot at a world position (the source may already be destroyed).</summary>
     public static void PlayAt(AudioClip clip, Vector3 position, float volume = 1f, float pitch = 1f)
@@ -270,6 +280,87 @@ public static class ProceduralSfx
             samples[i] = Mathf.Clamp(samples[i], -1f, 1f);
 
         var clip = AudioClip.Create("TreasureLand", count, 1, k_SampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    /// <summary>
+    /// A harsh, falling shriek for the Coronado taking a hit: pitch drops fast
+    /// from a shout down to a growl, with a raspy noise layer under the voiced
+    /// tone so it reads as pained rather than musical.
+    /// </summary>
+    static AudioClip BuildCoronadoScream()
+    {
+        const float duration = 0.4f;
+        int count = Mathf.RoundToInt(k_SampleRate * duration);
+        var samples = new float[count];
+        var random = new System.Random(59);
+
+        float phase = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            float t = i / (float)k_SampleRate;
+            float u = t / duration;
+
+            float f0 = Mathf.Lerp(1400f, 220f, u * u);
+            phase += 2f * Mathf.PI * f0 / k_SampleRate;
+
+            float voiced = Mathf.Sin(phase) + 0.6f * Mathf.Sin(phase * 2f) + 0.35f * Mathf.Sin(phase * 3f);
+            float rasp = Noise(random) * 0.5f;
+            float env = Mathf.Clamp01(t / 0.01f) * Mathf.Exp(-u * 3.5f);
+
+            samples[i] = (voiced * 0.5f + rasp) * env;
+        }
+
+        for (int i = 0; i < count; i++)
+            samples[i] = Mathf.Clamp(samples[i] * 1.3f, -1f, 1f);
+
+        var clip = AudioClip.Create("CoronadoScream", count, 1, k_SampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    /// <summary>
+    /// A low, grave, continuous breathing loop for the Coronado: a filtered-noise
+    /// rumble under a very low tone, swelling in and falling away twice per cycle
+    /// (in - out), with the seams cross-faded so it loops with no audible click.
+    /// </summary>
+    static AudioClip BuildCoronadoBreath()
+    {
+        const float duration = 3.2f;
+        int count = Mathf.RoundToInt(k_SampleRate * duration);
+        var samples = new float[count];
+        var random = new System.Random(83);
+
+        float filtered = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            float t = i / (float)k_SampleRate;
+            float cyclePos = t / duration;
+
+            // Two humps per cycle (inhale, exhale), each swelling then fading.
+            float breathPhase = cyclePos * Mathf.PI * 2f;
+            float envelope = 0.5f + 0.5f * Mathf.Sin(breathPhase - Mathf.PI * 0.5f);
+            envelope = Mathf.Pow(envelope, 1.5f);
+
+            float white = Noise(random);
+            filtered = Mathf.Lerp(filtered, white, 0.04f);
+            float tone = Mathf.Sin(2f * Mathf.PI * 55f * t) * 0.3f;
+
+            samples[i] = (filtered * 0.6f + tone) * envelope * 0.8f;
+        }
+
+        int fadeSamples = Mathf.Min(2000, count / 8);
+        for (int i = 0; i < fadeSamples; i++)
+        {
+            float t = i / (float)fadeSamples;
+            samples[i] = Mathf.Lerp(samples[count - fadeSamples + i], samples[i], t);
+        }
+
+        for (int i = 0; i < count; i++)
+            samples[i] = Mathf.Clamp(samples[i], -1f, 1f);
+
+        var clip = AudioClip.Create("CoronadoBreath", count, 1, k_SampleRate, false);
         clip.SetData(samples, 0);
         return clip;
     }
