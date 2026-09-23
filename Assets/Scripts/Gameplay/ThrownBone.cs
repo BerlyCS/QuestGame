@@ -53,7 +53,10 @@ public class ThrownBone : MonoBehaviour
         m_HasImpacted = true;
 
         if (m_Campfire != null)
+        {
             m_Campfire.AddFuel(-m_FuelDamage);
+            m_Campfire.PlayImpact();
+        }
 
         Destroy(gameObject);
     }

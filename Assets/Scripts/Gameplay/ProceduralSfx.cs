@@ -10,6 +10,7 @@ public static class ProceduralSfx
     const int k_SampleRate = 44100;
 
     static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh, s_TreasureLand;
+    static AudioClip s_FireImpact, s_FireLowFuel, s_SkeletonStep, s_SkeletonHit;
 
     /// <summary>Dull wooden knock: the log settling into the hand.</summary>
     public static AudioClip WoodGrab => s_WoodGrab ??= Build("WoodGrab", 0.14f, (t, r) =>
@@ -21,6 +22,24 @@ public static class ProceduralSfx
     /// <summary>Dry bone crack with a low thump: an ember landing on an enemy.</summary>
     public static AudioClip EnemyHit => s_EnemyHit ??= Build("EnemyHit", 0.22f, (t, r) =>
         Noise(r) * 0.8f * Mathf.Exp(-t * 55f) + Mathf.Sin(2f * Mathf.PI * 95f * t) * 0.7f * Mathf.Exp(-t * 20f));
+
+    /// <summary>A skeleton's footfall: a hollow bone clack over a short low thud, so the walk is heard before the enemy is seen.</summary>
+    public static AudioClip SkeletonStep => s_SkeletonStep ??= Build("SkeletonStep", 0.16f, (t, r) =>
+        Noise(r) * 0.55f * Mathf.Exp(-t * 140f)
+        + Mathf.Sin(2f * Mathf.PI * 230f * t) * 0.5f * Mathf.Exp(-t * 55f)
+        + Mathf.Sin(2f * Mathf.PI * 82f * t) * 0.6f * Mathf.Exp(-t * 28f));
+
+    /// <summary>A skeleton taking a hit: a sharp bone crack with rattling overtones as the frame is jarred.</summary>
+    public static AudioClip SkeletonHit => s_SkeletonHit ??= Build("SkeletonHit", 0.3f, (t, r) =>
+        Noise(r) * 0.8f * Mathf.Exp(-t * 60f)
+        + Mathf.Sin(2f * Mathf.PI * 180f * t) * 0.5f * Mathf.Exp(-t * 30f)
+        + Mathf.Sin(2f * Mathf.PI * 320f * t) * 0.4f * Mathf.Exp(-t * 45f));
+
+    /// <summary>The campfire taking a hit: an airy puff of scattered embers over a muffled thump.</summary>
+    public static AudioClip FireImpact => s_FireImpact ??= BuildFireImpact();
+
+    /// <summary>A warning cue as the fire gutters low: a falling, airy whoosh with a few ember pops.</summary>
+    public static AudioClip FireLowFuel => s_FireLowFuel ??= BuildFireLowFuel();
 
     /// <summary>Victory: a calm dawn chorus - birds trilling and chirping over a soft breeze (~9 s).</summary>
     public static AudioClip BirdSong => s_BirdSong ??= BuildBirdSong();
@@ -81,6 +100,75 @@ public static class ProceduralSfx
         }
 
         var clip = AudioClip.Create("FireWhoosh", count, 1, k_SampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    /// <summary>
+    /// The campfire being struck: a low, muffled thump as the blow lands, an
+    /// airy burst of noise as embers scatter, and sparse bright ticks from the
+    /// sparks flung off the coals.
+    /// </summary>
+    static AudioClip BuildFireImpact()
+    {
+        const float duration = 0.45f;
+        int count = Mathf.RoundToInt(k_SampleRate * duration);
+        var samples = new float[count];
+        var random = new System.Random(51);
+
+        float filtered = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            float t = i / (float)k_SampleRate;
+            filtered = Mathf.Lerp(filtered, Noise(random), 0.35f);
+
+            float puff = filtered * 0.7f * Mathf.Exp(-t * 22f);
+            float thump = Mathf.Sin(2f * Mathf.PI * 72f * t) * 0.8f * Mathf.Exp(-t * 15f);
+            float value = puff + thump;
+
+            if (random.NextDouble() < 0.02 * Mathf.Exp(-t * 4f))
+                value += Noise(random) * 0.5f;
+
+            samples[i] = Mathf.Clamp(value, -1f, 1f);
+        }
+
+        var clip = AudioClip.Create("FireImpact", count, 1, k_SampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
+    }
+
+    /// <summary>
+    /// Warning that the fire is running out: an airy whoosh whose pitch falls
+    /// as it fades, so it reads as the flame sinking rather than a musical note.
+    /// </summary>
+    static AudioClip BuildFireLowFuel()
+    {
+        const float duration = 0.9f;
+        int count = Mathf.RoundToInt(k_SampleRate * duration);
+        var samples = new float[count];
+        var random = new System.Random(67);
+
+        float filtered = 0f;
+        float phase = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            float t = i / (float)k_SampleRate;
+            float u = t / duration;
+
+            filtered = Mathf.Lerp(filtered, Noise(random), 0.12f);
+            float freq = Mathf.Lerp(220f, 90f, u);
+            phase += 2f * Mathf.PI * freq / k_SampleRate;
+
+            float env = Mathf.Clamp01(t / 0.12f) * Mathf.Exp(-Mathf.Max(0f, t - 0.12f) * 2.4f);
+            float value = (Mathf.Sin(phase) * 0.35f + filtered * 0.6f) * env;
+
+            if (random.NextDouble() < 0.004 * Mathf.Exp(-t * 1.5f))
+                value += Noise(random) * 0.6f;
+
+            samples[i] = Mathf.Clamp(value, -1f, 1f);
+        }
+
+        var clip = AudioClip.Create("FireLowFuel", count, 1, k_SampleRate, false);
         clip.SetData(samples, 0);
         return clip;
     }

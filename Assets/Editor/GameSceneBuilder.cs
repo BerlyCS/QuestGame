@@ -1438,8 +1438,7 @@ public static class GameSceneBuilder
         prologue.Inject(
             Object.FindAnyObjectByType<GameManager>(),
             systems.GetComponent<NightEnvironmentController>(),
-            campfire,
-            Object.FindAnyObjectByType<TreasureReveal>());
+            campfire);
     }
 
     // To the player's right, close enough to reach without walking, clear of the

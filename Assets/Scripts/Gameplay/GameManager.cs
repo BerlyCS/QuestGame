@@ -3,18 +3,17 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Owns the ways the night ends. Almost cero UI (see CLAUDE.md): no Game Over
-/// screen and no buttons - the world goes bright with a calm birdsong on
-/// victory, or black with a sinister laugh on defeat, then the scene reloads.
-/// The one exception is the "¡Has ganado!" / "¡Has perdido!" card
-/// (see <see cref="EndGameBanner"/>) so the outcome is unmistakable.
+/// Owns the ways the night ends. There is no UI at all (see CLAUDE.md): no Game
+/// Over screen, no buttons and no text - the world goes bright with a calm
+/// birdsong on victory, or the screen floods red with a sinister laugh on
+/// defeat (see <see cref="PlayerHealth"/>), then the scene reloads.
 ///
 /// Victory: survive <see cref="m_SurvivalDuration"/> seconds. Every Caminante
 /// freezes and collapses, the world lights up for
 /// <see cref="m_VictoryLitDuration"/> seconds, then restarts.
 ///
-/// Defeat: the player's life runs out (PlayerHealth.OnDied). The world
-/// fades to black over <see cref="m_DefeatFadeDuration"/> seconds while the
+/// Defeat: the player's life runs out (PlayerHealth.OnDied). The screen turns
+/// completely red over <see cref="m_DefeatFadeDuration"/> seconds while the
 /// sinister laugh plays, then restarts at the <see cref="m_DefeatRestartDelay"/> mark.
 ///
 /// Prologue: with <see cref="m_WaitForStart"/> on the night does not run yet -
@@ -261,7 +260,6 @@ public class GameManager : MonoBehaviour
             m_ChestRenderer.sharedMaterial = m_TeethMaterial;
 
         Play2DSound(ProceduralSfx.BirdSong);
-        EndGameBanner.Show(true, m_PlayerHealth != null ? m_PlayerHealth.Head : null);
         StartCoroutine(RestartAfter(m_VictoryLitDuration));
     }
 
@@ -277,7 +275,6 @@ public class GameManager : MonoBehaviour
             m_HunterSpawner.enabled = false;
 
         Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
-        EndGameBanner.Show(false, m_PlayerHealth != null ? m_PlayerHealth.Head : null);
         StartCoroutine(FadeToBlackThenRestart());
     }
 

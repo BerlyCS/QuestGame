@@ -73,6 +73,16 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     [SerializeField] float m_KneelDropAmount = 0.3f;
     [SerializeField] Color m_HitFlashColor = new Color(1f, 0.25f, 0.2f);
 
+    [Header("Sounds")]
+    [Tooltip("Footfall played while walking. Left empty, the procedural bone step is used.")]
+    [SerializeField] AudioClip m_StepSfx;
+    [SerializeField, Range(0f, 1f)] float m_StepSfxVolume = 0.35f;
+    [Tooltip("Seconds between footsteps while walking.")]
+    [SerializeField] float m_StepInterval = 0.55f;
+    [Tooltip("Bone clatter played when struck. Left empty, the procedural crack is used.")]
+    [SerializeField] AudioClip m_HitSfx;
+    [SerializeField, Range(0f, 1f)] float m_HitSfxVolume = 0.8f;
+
     [Header("Death")]
     [SerializeField] AudioClip m_DeathSfx;
     [SerializeField, Range(0f, 1f)] float m_DeathSfxVolume = 0.85f;
@@ -100,6 +110,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     int m_Hits;
     float m_BobPhase;
+    float m_NextStepTime;
     PlayerHealth m_Player;
     float m_NextAttackTime;
     float m_HitFlashUntil;
@@ -205,9 +216,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             if (Time.time >= m_NextAttackTime)
             {
                 m_NextAttackTime = Time.time + m_AttackInterval;
-                // The fire's own fuel-driven visuals (flame size, light, crackle pitch)
-                // already shrink and hiss as fuel drops - no separate effect needed here.
+                // The fire takes the fuel loss and throws its own hit feedback
+                // (embers/ash burst + impact sound) so the blow reads on the fire.
                 m_Campfire.AddFuel(-m_AttackFuelDrain);
+                m_Campfire.PlayImpact();
                 if (m_Animator != null)
                     m_Animator.SetTrigger(k_AttackHash);
             }
@@ -255,7 +267,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             if (Time.time >= m_NextAttackTime)
             {
                 m_NextAttackTime = Time.time + m_PlayerAttackInterval;
-                m_Player.TakeDamage(m_PlayerDamage);
+                m_Player.TakeDamage(m_PlayerDamage, transform.position);
                 if (m_Animator != null)
                     m_Animator.SetTrigger(k_AttackHash);
             }
@@ -318,6 +330,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     void AnimateWalk()
     {
+        PlayStepIfDue();
+
         if (m_Animator != null)
         {
             // The controller blends Idle_A at 0, Walking_A at 0.5 and Running_A
@@ -338,6 +352,17 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             m_LeftArm.localRotation = Quaternion.Euler(swing, 0f, 0f);
         if (m_RightArm != null)
             m_RightArm.localRotation = Quaternion.Euler(-swing, 0f, 0f);
+    }
+
+    /// <summary>Plays a footfall on a fixed cadence while walking, with a little pitch wobble so repeats do not feel mechanical.</summary>
+    void PlayStepIfDue()
+    {
+        if (Time.time < m_NextStepTime)
+            return;
+
+        m_NextStepTime = Time.time + m_StepInterval;
+        AudioClip clip = m_StepSfx != null ? m_StepSfx : ProceduralSfx.SkeletonStep;
+        ProceduralSfx.PlayAt(clip, transform.position, m_StepSfxVolume, Random.Range(0.92f, 1.08f));
     }
 
     /// <summary>Kneeling, arms reaching into the fire - visually distinct from walking.</summary>
@@ -365,6 +390,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
         m_Hits -= amount;
         m_HitFlashUntil = Time.time + 0.12f;
+        AudioClip hitClip = m_HitSfx != null ? m_HitSfx : ProceduralSfx.SkeletonHit;
+        ProceduralSfx.PlayAt(hitClip, transform.position + Vector3.up, m_HitSfxVolume, Random.Range(0.95f, 1.05f));
         if (m_Animator != null)
             m_Animator.SetTrigger(k_HitHash);
 

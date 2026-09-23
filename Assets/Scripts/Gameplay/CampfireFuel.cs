@@ -8,7 +8,8 @@ using UnityEngine.Events;
 /// which <see cref="NightEnvironmentController"/> reads to set overall
 /// darkness and <see cref="CampRevealController"/> uses (via
 /// <see cref="OnFuelChanged"/>) to reveal the camp the first time the player
-/// feeds it.
+/// feeds it. Fuel only sets the light's average brightness; a Perlin-noise
+/// flicker (see <see cref="ApplyLightFlicker"/>) makes it dance like real fire.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(AudioSource))]
@@ -49,6 +50,25 @@ public class CampfireFuel : MonoBehaviour
         "last 20% of fuel collapses fast instead of fading in a straight line.")]
     [SerializeField] float m_LightCurveExponent = 0.7f;
 
+    [Header("Fire Light Flicker")]
+    [Tooltip("How far the light wanders from its fuel-driven base intensity, as a " +
+        "fraction (0 = a steady lamp, 0.5 = the intensity swings +/-50%).")]
+    [Range(0f, 1f)]
+    [SerializeField] float m_FlickerAmount = 0.4f;
+
+    [Tooltip("How fast the flicker drifts, in noise cycles per second. Low values " +
+        "breathe like gas, high values snap like burning wood.")]
+    [SerializeField] float m_FlickerSpeed = 7f;
+
+    [Tooltip("Flicker range multiplier applied on top of the intensity flicker: the " +
+        "light's reach should barely move, or the camp feels like it is pulsing.")]
+    [Range(0f, 1f)]
+    [SerializeField] float m_FlickerRangeInfluence = 0.25f;
+
+    [Tooltip("Extra flicker at low fuel: a guttering fire sways more than a roaring one.")]
+    [Range(0f, 1f)]
+    [SerializeField] float m_LowFuelFlickerBoost = 0.6f;
+
     [Header("Flame Particles")]
     [SerializeField] ParticleSystem m_FlameParticles;
     [SerializeField] float m_MaxEmissionRate = 40f;
@@ -60,6 +80,22 @@ public class CampfireFuel : MonoBehaviour
     [SerializeField] float m_MinFirePitch = 0.6f;
     [SerializeField] float m_MaxFirePitch = 1.25f;
 
+    [Header("Damage Feedback")]
+    [Tooltip("Small debris/burn particles thrown off when an enemy lands a hit on the fire.")]
+    [SerializeField] int m_ImpactParticleCount = 16;
+    [SerializeField] float m_ImpactParticleSize = 0.12f;
+    [SerializeField] Color m_ImpactLavaColor = new Color(1f, 0.3f, 0.05f);
+    [SerializeField] Color m_ImpactGrayColor = new Color(0.4f, 0.38f, 0.35f);
+    [SerializeField] Color m_ImpactDarkColor = new Color(0.13f, 0.12f, 0.11f);
+    [SerializeField, Range(0f, 1f)] float m_ImpactVolume = 0.65f;
+
+    [Header("Low Fuel Alerts")]
+    [Tooltip("Fuel levels (0-1). Each one, as the fire drops through it, throws a small " +
+        "ember puff and a warning sound so the player hears the fire dying.")]
+    [SerializeField] float[] m_FuelAlertThresholds = { 0.66f, 0.4f, 0.2f, 0.08f };
+    [SerializeField] int m_AlertParticleCount = 8;
+    [SerializeField, Range(0f, 1f)] float m_AlertVolume = 0.5f;
+
     [Header("Events")]
     [SerializeField] UnityEvent m_OnFuelChanged = new UnityEvent();
     [SerializeField] UnityEvent m_OnIgnited = new UnityEvent();
@@ -70,6 +106,15 @@ public class CampfireFuel : MonoBehaviour
     float m_Flare;
     bool m_WasBurning;
     AudioSource m_FireAudio;
+    ParticleSystem m_ImpactParticles;
+    int m_NextAlertIndex;
+    static Material s_ParticleMaterial;
+    static bool s_ParticleMaterialSearched;
+
+    // Fuel-driven light values, cached by ApplyVisuals so the per-frame flicker
+    // can modulate them without re-deriving the fuel curve every frame.
+    float m_BaseLightIntensity;
+    float m_BaseLightRange;
 
     public float MaxFuel => m_MaxFuel;
     public float CurrentFuel => m_CurrentFuel;
@@ -99,6 +144,9 @@ public class CampfireFuel : MonoBehaviour
         m_WasBurning = IsBurning;
         ApplyVisuals();
 
+        EnsureImpactParticles();
+        ResetFuelAlerts();
+
         m_FireAudio.Play();
     }
 
@@ -123,6 +171,11 @@ public class CampfireFuel : MonoBehaviour
 
         if (visualsDirty)
             ApplyVisuals();
+
+        // The flicker is time-based, not fuel-based, so it runs every frame while
+        // the fire has a light to waggle.
+        if (m_FireLight != null && m_FireLight.enabled)
+            ApplyLightFlicker();
 
         if (m_CurrentFuel <= 0f || !m_BurnsOverTime)
             return;
@@ -154,6 +207,7 @@ public class CampfireFuel : MonoBehaviour
             return;
 
         ApplyVisuals();
+        UpdateFuelAlerts();
 
         if (invokeEvents)
             m_OnFuelChanged.Invoke();
@@ -187,7 +241,166 @@ public class CampfireFuel : MonoBehaviour
         m_CurrentFuel = Mathf.Clamp(amount, 0f, m_MaxFuel);
         m_DisplayFuel = m_CurrentFuel;
         m_WasBurning = IsBurning;
+        ResetFuelAlerts();
         ApplyVisuals();
+    }
+
+    /// <summary>
+    /// Feedback for an enemy landing a blow on the fire: a burst of small
+    /// debris particles (lava red, gray and dark gray) and a muffled impact
+    /// sound. Called by the melee Caminante and by <see cref="ThrownBone"/> on
+    /// impact; purely presentational, the fuel loss is applied by the caller.
+    /// </summary>
+    public void PlayImpact()
+    {
+        if (!IsBurning)
+            return;
+
+        EmitBurst(m_ImpactParticleCount, 1f);
+        ProceduralSfx.PlayAt(ProceduralSfx.FireImpact, transform.position + Vector3.up * 0.4f, m_ImpactVolume);
+    }
+
+    /// <summary>
+    /// Fires a warning cue every time the fire drops through one of the
+    /// configured thresholds (see <see cref="m_FuelAlertThresholds"/>), and
+    /// walks the cursor back up when the fire is refuelled.
+    /// </summary>
+    void UpdateFuelAlerts()
+    {
+        if (m_FuelAlertThresholds == null || m_FuelAlertThresholds.Length == 0)
+            return;
+
+        float fuel = Fuel01;
+
+        // Refuelling back above the last alert arms every threshold again.
+        if (m_NextAlertIndex > 0 && fuel > m_FuelAlertThresholds[m_NextAlertIndex - 1])
+        {
+            ResetFuelAlerts();
+            return;
+        }
+
+        if (m_NextAlertIndex >= m_FuelAlertThresholds.Length || fuel > m_FuelAlertThresholds[m_NextAlertIndex])
+            return;
+
+        // A big drop can cross several thresholds at once; only one cue plays.
+        while (m_NextAlertIndex < m_FuelAlertThresholds.Length && fuel <= m_FuelAlertThresholds[m_NextAlertIndex])
+            m_NextAlertIndex++;
+
+        EmitBurst(m_AlertParticleCount, 0.6f);
+        ProceduralSfx.PlayAt(ProceduralSfx.FireLowFuel, transform.position + Vector3.up * 0.4f, m_AlertVolume);
+    }
+
+    /// <summary>Rearms the low-fuel cues for the current fuel level.</summary>
+    void ResetFuelAlerts()
+    {
+        m_NextAlertIndex = 0;
+        if (m_FuelAlertThresholds == null)
+            return;
+
+        float fuel = Fuel01;
+        while (m_NextAlertIndex < m_FuelAlertThresholds.Length && m_FuelAlertThresholds[m_NextAlertIndex] >= fuel)
+            m_NextAlertIndex++;
+    }
+
+    /// <summary>
+    /// Throws a handful of small particles up out of the fire, each randomly
+    /// one of the lava/gray/dark-gray colors so the burst reads as embers,
+    /// ash and scorched soot rather than a single flat color.
+    /// </summary>
+    void EmitBurst(int count, float upwardBias)
+    {
+        if (m_ImpactParticles == null || count <= 0)
+            return;
+
+        var emit = new ParticleSystem.EmitParams();
+        for (int i = 0; i < count; i++)
+        {
+            float pick = Random.value;
+            emit.startColor = pick < 0.4f ? m_ImpactLavaColor : pick < 0.7f ? m_ImpactGrayColor : m_ImpactDarkColor;
+            emit.startSize = m_ImpactParticleSize * Random.Range(0.5f, 1.3f);
+            emit.position = transform.position + Vector3.up * 0.35f + Random.insideUnitSphere * 0.25f;
+            emit.velocity = new Vector3(
+                Random.Range(-0.7f, 0.7f),
+                Random.Range(0.4f, 1.6f) * upwardBias,
+                Random.Range(-0.7f, 0.7f));
+            m_ImpactParticles.Emit(emit, 1);
+        }
+    }
+
+    /// <summary>Lazily builds the persistent particle system the impact/alert bursts feed.</summary>
+    void EnsureImpactParticles()
+    {
+        if (m_ImpactParticles != null)
+            return;
+
+        var go = new GameObject("Campfire Impact Particles");
+        go.transform.SetParent(transform, false);
+
+        var ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        var main = ps.main;
+        main.loop = true;
+        main.duration = 5f;
+        main.playOnAwake = false;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.9f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.2f, 1.1f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.16f);
+        main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+        main.gravityModifier = 0.8f;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 300;
+
+        // Bursts only: nothing emits on its own, PlayImpact/EmitBurst feed it.
+        var emission = ps.emission;
+        emission.enabled = false;
+
+        var shape = ps.shape;
+        shape.enabled = true;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 0.18f;
+
+        var colorOverLifetime = ps.colorOverLifetime;
+        colorOverLifetime.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+            new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        colorOverLifetime.color = new ParticleSystem.MinMaxGradient(gradient);
+
+        var sizeOverLifetime = ps.sizeOverLifetime;
+        sizeOverLifetime.enabled = true;
+        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f,
+            new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, 0.2f)));
+
+        var renderer = ps.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        var material = GetParticleMaterial();
+        if (material != null)
+            renderer.sharedMaterial = material;
+
+        m_ImpactParticles = ps;
+        ps.Play();
+    }
+
+    static Material GetParticleMaterial()
+    {
+        if (!s_ParticleMaterialSearched)
+        {
+            s_ParticleMaterialSearched = true;
+            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
+                         ?? Shader.Find("Particles/Standard Unlit")
+                         ?? Shader.Find("Sprites/Default");
+            if (shader != null)
+            {
+                s_ParticleMaterial = new Material(shader) { name = "M_CampfireImpact" };
+                if (s_ParticleMaterial.HasProperty("_BaseColor"))
+                    s_ParticleMaterial.SetColor("_BaseColor", Color.white);
+                s_ParticleMaterial.color = Color.white;
+            }
+        }
+
+        return s_ParticleMaterial;
     }
 
     void ApplyVisuals()
@@ -198,9 +411,12 @@ public class CampfireFuel : MonoBehaviour
         if (m_FireLight != null)
         {
             m_FireLight.enabled = n > 0f;
-            m_FireLight.intensity = Mathf.Lerp(m_MinLightIntensity, m_MaxLightIntensity, curved) * (1f + m_Flare * 0.8f);
-            m_FireLight.range = Mathf.Lerp(m_MinLightRange, m_MaxLightRange, curved);
             m_FireLight.color = Color.Lerp(m_EmberColor, m_FlameColor, curved);
+
+            // Cache the fuel-driven baseline; the flicker layers on top of it.
+            m_BaseLightIntensity = Mathf.Lerp(m_MinLightIntensity, m_MaxLightIntensity, curved);
+            m_BaseLightRange = Mathf.Lerp(m_MinLightRange, m_MaxLightRange, curved);
+            ApplyLightFlicker();
         }
 
         if (m_FlameParticles != null)
@@ -229,6 +445,32 @@ public class CampfireFuel : MonoBehaviour
             m_FireAudio.volume = n <= 0.001f ? 0f : Mathf.Lerp(m_MinFireVolume, m_MaxFireVolume, n);
             m_FireAudio.pitch = Mathf.Lerp(m_MinFirePitch, m_MaxFirePitch, n);
         }
+    }
+
+    /// <summary>
+    /// Waggers the fire light around its fuel-driven baseline. Two Perlin-noise
+    /// octaves are mixed so the light has both a slow, breathing sway and a
+    /// faster, sharper crackle; fuel only sets the average brightness, never the
+    /// moment-to-moment amount. <see cref="Flare"/> still spikes on top of this.
+    /// </summary>
+    void ApplyLightFlicker()
+    {
+        if (m_FireLight == null)
+            return;
+
+        float n = m_MaxFuel <= 0f ? 0f : Mathf.Clamp01(m_DisplayFuel / m_MaxFuel);
+
+        float t = Time.time * m_FlickerSpeed;
+        float slow = Mathf.PerlinNoise(t * 0.17f, 3.7f);   // breathing sway
+        float fast = Mathf.PerlinNoise(41.3f, t);          // crackle snap
+
+        // More sway as the fire gutters down to embers.
+        float amount = m_FlickerAmount * Mathf.Lerp(1f + m_LowFuelFlickerBoost, 1f, n);
+        float wobble = ((slow - 0.5f) * 0.7f + (fast - 0.5f) * 0.9f) * 2f * amount;
+        float flicker = Mathf.Max(0.05f, 1f + wobble);
+
+        m_FireLight.intensity = m_BaseLightIntensity * (1f + m_Flare * 0.8f) * flicker;
+        m_FireLight.range = m_BaseLightRange * (1f + (flicker - 1f) * m_FlickerRangeInfluence);
     }
 
     /// <summary>

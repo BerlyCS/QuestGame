@@ -36,6 +36,8 @@ public class Log : MonoBehaviour
     bool m_HasBeenGrabbed;
     bool m_Consumed;
 
+    static AudioClip s_FeedClip;
+
     public UnityEvent OnConsumed => m_OnConsumed;
     public UnityEvent OnGrabbed => m_OnGrabbed;
 
@@ -43,6 +45,60 @@ public class Log : MonoBehaviour
     {
         m_Grabbable = GetComponent<Grabbable>();
         m_Grabbable.WhenPointerEventRaised += HandlePointerEvent;
+        FitColliderToVisuals();
+    }
+
+    /// <summary>
+    /// Rebuilds the box collider from the log model's current render bounds, in
+    /// this transform's local space. The scene builder fits the collider at
+    /// build time, but the visual can be resized afterwards (import scale, a
+    /// model swap, a manual tweak) which would otherwise leave an oversized
+    /// invisible hitbox. Doing it here keeps the hitbox glued to the mesh the
+    /// player actually sees.
+    /// </summary>
+    void FitColliderToVisuals()
+    {
+        var box = GetComponent<BoxCollider>();
+        if (box == null)
+            return;
+
+        bool found = false;
+        Bounds localBounds = default;
+
+        foreach (var renderer in GetComponentsInChildren<Renderer>())
+        {
+            var filter = renderer.GetComponent<MeshFilter>();
+            if (filter == null || filter.sharedMesh == null)
+                continue;
+
+            // Mesh corners (not renderer.bounds) so a rotated model can't inflate
+            // the fit with a loose world-space AABB.
+            Bounds mesh = filter.sharedMesh.bounds;
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = mesh.center + Vector3.Scale(mesh.extents, new Vector3(
+                    (i & 1) == 0 ? -1f : 1f,
+                    (i & 2) == 0 ? -1f : 1f,
+                    (i & 4) == 0 ? -1f : 1f));
+                Vector3 local = transform.InverseTransformPoint(renderer.transform.TransformPoint(corner));
+
+                if (!found)
+                {
+                    localBounds = new Bounds(local, Vector3.zero);
+                    found = true;
+                }
+                else
+                {
+                    localBounds.Encapsulate(local);
+                }
+            }
+        }
+
+        if (!found)
+            return;
+
+        box.center = localBounds.center;
+        box.size = localBounds.size;
     }
 
     void OnDestroy()
@@ -75,9 +131,13 @@ public class Log : MonoBehaviour
         campfire.AddFuel(m_FuelValue);
 
         // Without haptics the player has to see and hear the log catch: a whoosh at
-        // the fire, a bright flash and a flare-up of the flames.
+        // the fire, a bright flash and a flare-up of the flames. The recorded
+        // fire_whoosh asset is used when present (see Assets/Resources/Fire); the
+        // code-synthesized whoosh is the fallback so the cue never goes silent.
         campfire.Flare();
-        ProceduralSfx.PlayAt(ProceduralSfx.FireWhoosh, campfire.transform.position + Vector3.up * 0.3f, 1f);
+        AudioClip feedClip = s_FeedClip ??= Resources.Load<AudioClip>("Fire/fire_whoosh");
+        ProceduralSfx.PlayAt(feedClip != null ? feedClip : ProceduralSfx.FireWhoosh,
+            campfire.transform.position + Vector3.up * 0.3f, 1f);
         FadingGlow.Spawn(campfire.transform.position + Vector3.up * 0.35f, 0.8f, new Color(1.6f, 0.7f, 0.15f), 0.5f);
 
         if (m_ConsumeEffect != null)

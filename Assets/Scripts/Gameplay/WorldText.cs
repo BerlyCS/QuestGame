@@ -4,9 +4,9 @@ using UnityEngine.UI;
 /// <summary>
 /// Builds the game's world-space text at runtime: a world-space canvas with a
 /// single <see cref="Text"/> using Unity's built-in font, so a label needs no
-/// authored UI prefab and no font asset. This is the same technique
-/// <see cref="EndGameBanner"/> uses for the end-of-night card, factored out so
-/// other world labels (see <see cref="GameStartTarget"/>) can reuse it.
+/// authored UI prefab and no font asset. Kept as the shared helper for any
+/// world labels the game ever needs; the win/lose card has been removed so the
+/// game is now wordless end to end.
 ///
 /// The returned object is built at the origin, unrotated: the caller places and
 /// orients it. A world-space canvas is readable from the side its forward

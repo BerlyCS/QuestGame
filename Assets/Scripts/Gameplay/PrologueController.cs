@@ -1,5 +1,6 @@
 using Oculus.Interaction;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -8,7 +9,9 @@ using UnityEngine;
 /// The camp opens in late afternoon with a dead fire. The only cue is the log
 /// pile: every log glows on its own surface (see <see cref="EmissionPulse"/>),
 /// so the player is pulled to the natural first action - carry one log into the
-/// fire - and nothing else blinks at the same time to overload them. Picking a
+/// fire - and nothing else blinks at the same time to overload them. The axe and
+/// the bow are held back (hidden, not cued) until the night so nothing competes
+/// with that beat. Picking a
 /// log up raises a sphere on the campfire (see <see cref="GuideBlink"/>); the
 /// two cues stay up together, even if the log is dropped, until the fire is
 /// actually fed, so the beat reads as a two-step tutorial. As soon as
@@ -17,9 +20,9 @@ using UnityEngine;
 /// opens red (see <see cref="NightEnvironmentController"/>); if the player never
 /// touches a log the two-minute dusk simply finishes on its own.
 ///
-/// Only once the night has fallen do the axe and bow cues appear - the axe as a
-/// surface highlight, the bow with its existing grip/string markers - so the
-/// lesson stays one beat at a time. No text is used anywhere.
+/// Only once the night has fallen do the axe, the bow and their cues appear -
+/// the axe as a surface highlight, the bow with its existing grip/string markers
+/// - so the lesson stays one beat at a time. No text is used anywhere.
 /// </summary>
 [DisallowMultipleComponent]
 public class PrologueController : MonoBehaviour
@@ -27,12 +30,16 @@ public class PrologueController : MonoBehaviour
     [SerializeField] GameManager m_GameManager;
     [SerializeField] NightEnvironmentController m_Night;
     [SerializeField] CampfireFuel m_Campfire;
-    [Tooltip("Treasure dropped beside the fire when the night begins.")]
-    [SerializeField] TreasureReveal m_Treasure;
 
     [Header("Cues")]
     [Tooltip("Bow tutorial markers, held back until the game begins.")]
     [SerializeField] BowTutorial m_BowTutorial;
+
+    [Header("Held back until night")]
+    [Tooltip("Weapons and loose props that would distract during the prologue. They are " +
+        "switched off at scene start and switched back on, exactly where they are, when " +
+        "the night begins. Leave empty to auto-resolve the axe and the bow.")]
+    [SerializeField] GameObject[] m_ObjectsHiddenUntilNight;
 
     [Header("Camp drop-in")]
     [Tooltip("When on, the logs tumble into the pile as the prologue opens.")]
@@ -46,13 +53,14 @@ public class PrologueController : MonoBehaviour
     Grabbable m_AxeGrabbable;
     GuideBlink m_CampfireCue;
     GameObject m_CampfireCueRoot;
+    readonly List<GameObject> m_NightObjects = new List<GameObject>();
+    GameObject m_AxeObject;
 
-    public void Inject(GameManager gameManager, NightEnvironmentController night, CampfireFuel campfire, TreasureReveal treasure)
+    public void Inject(GameManager gameManager, NightEnvironmentController night, CampfireFuel campfire)
     {
         m_GameManager = gameManager;
         m_Night = night;
         m_Campfire = campfire;
-        m_Treasure = treasure;
     }
 
     IEnumerator Start()
@@ -63,6 +71,11 @@ public class PrologueController : MonoBehaviour
         // the night, and the axe's old floating sphere is stripped outright.
         if (m_BowTutorial != null)
             m_BowTutorial.SetCuesEnabled(false);
+
+        // Everything that would pull the eye away from the log pile - the axe,
+        // the bow and friends - stays off until the night and then appears right
+        // where it always stood.
+        CacheAndHideNightObjects();
 
         SetLogCues(true);
 
@@ -133,9 +146,8 @@ public class PrologueController : MonoBehaviour
 
     /// <summary>
     /// The learn-to-play beat is over: the fire has been fed (or the dusk simply
-    /// ran out). Clears the log cue, drops the treasure and rushes what is left
-    /// of the dusk; the night itself only starts once the sky has actually
-    /// reached night.
+    /// ran out). Clears the log cue and rushes what is left of the dusk; the
+    /// night only arrives once the sky has actually reached night.
     /// </summary>
     void EndCues()
     {
@@ -147,16 +159,13 @@ public class PrologueController : MonoBehaviour
         SetLogCues(false);
         ClearCampfireCue();
 
-        if (m_Treasure != null)
-            m_Treasure.Reveal();
-
         if (m_Night != null)
             m_Night.BeginDuskRush();
     }
 
     /// <summary>
     /// Nightfall: hand the game over to the <see cref="GameManager"/> and only
-    /// now bring in the axe and bow cues.
+    /// now bring in the axe, the bow and their cues.
     /// </summary>
     void StartNightRunning()
     {
@@ -168,6 +177,7 @@ public class PrologueController : MonoBehaviour
         if (m_GameManager != null)
             m_GameManager.BeginNight();
 
+        RevealNightObjects();
         ShowNightCues();
     }
 
@@ -176,24 +186,72 @@ public class PrologueController : MonoBehaviour
         if (m_BowTutorial != null)
             m_BowTutorial.SetCuesEnabled(true);
 
-        if (m_AxeHighlight == null)
+        if (m_AxeHighlight == null && m_AxeObject != null)
         {
-            var axe = GameObject.Find("Axe");
-            if (axe != null)
-            {
-                StripGuideBlink(axe);
-                m_AxeGrabbable = axe.GetComponent<Grabbable>();
-                if (m_AxeGrabbable == null)
-                    m_AxeGrabbable = axe.GetComponentInChildren<Grabbable>(true);
+            var axe = m_AxeObject;
+            StripGuideBlink(axe);
+            m_AxeGrabbable = axe.GetComponent<Grabbable>();
+            if (m_AxeGrabbable == null)
+                m_AxeGrabbable = axe.GetComponentInChildren<Grabbable>(true);
 
-                m_AxeHighlight = axe.GetComponent<EmissionPulse>();
-                if (m_AxeHighlight == null)
-                    m_AxeHighlight = axe.AddComponent<EmissionPulse>();
-            }
+            m_AxeHighlight = axe.GetComponent<EmissionPulse>();
+            if (m_AxeHighlight == null)
+                m_AxeHighlight = axe.AddComponent<EmissionPulse>();
         }
 
         if (m_AxeHighlight != null)
             m_AxeHighlight.SetActive(true);
+    }
+
+    /// <summary>
+    /// Finds the weapons and props the prologue should not show yet, remembers
+    /// them and hides them. The list is taken from the inspector when set;
+    /// otherwise it auto-resolves every bow and every axe in the scene, so the
+    /// prologue stays quiet without any scene wiring.
+    /// </summary>
+    void CacheAndHideNightObjects()
+    {
+        if (m_ObjectsHiddenUntilNight == null || m_ObjectsHiddenUntilNight.Length == 0)
+            m_ObjectsHiddenUntilNight = ResolveNightObjects();
+
+        foreach (var go in m_ObjectsHiddenUntilNight)
+        {
+            if (go == null || m_NightObjects.Contains(go))
+                continue;
+
+            if (m_AxeObject == null && go.name.StartsWith("Axe"))
+            {
+                m_AxeObject = go;
+                StripGuideBlink(go);
+            }
+
+            m_NightObjects.Add(go);
+            go.SetActive(false);
+        }
+    }
+
+    /// <summary>Switches the held-back objects back on, where they are.</summary>
+    void RevealNightObjects()
+    {
+        foreach (var go in m_NightObjects)
+            if (go != null)
+                go.SetActive(true);
+    }
+
+    static GameObject[] ResolveNightObjects()
+    {
+        var objects = new List<GameObject>();
+
+        foreach (var bow in FindObjectsByType<Bow>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            objects.Add(bow.gameObject);
+
+        // Every axe is a banisher; filter by name so the loose "banishing
+        // cylinder" prop, which is meant to stay out, is not swept up with them.
+        foreach (var banisher in FindObjectsByType<EnemyBanisher>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (banisher.gameObject.name.StartsWith("Axe"))
+                objects.Add(banisher.gameObject);
+
+        return objects.ToArray();
     }
 
     /// <summary>Enables or clears the glow on every log currently in the camp.</summary>
@@ -284,13 +342,5 @@ public class PrologueController : MonoBehaviour
             m_Campfire = FindAnyObjectByType<CampfireFuel>(FindObjectsInactive.Include);
         if (m_BowTutorial == null)
             m_BowTutorial = FindAnyObjectByType<BowTutorial>(FindObjectsInactive.Include);
-        if (m_Treasure == null)
-            m_Treasure = FindAnyObjectByType<TreasureReveal>(FindObjectsInactive.Include);
-
-        // No axe cue during the prologue: take the floating sphere away now so it
-        // cannot blink, and add the highlight only when the night starts.
-        var axe = GameObject.Find("Axe");
-        if (axe != null)
-            StripGuideBlink(axe);
     }
 }
