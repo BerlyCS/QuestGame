@@ -283,11 +283,15 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     }
 
     /// <summary>
-    /// Sent away when the campfire dies (see GameManager's outage): stops
-    /// counting as hittable, turns from the fire, walks off and disappears.
-    /// OnDied still fires on the way out so the spawner's alive count stays right.
+    /// Sent away when the campfire dies (see GameManager's outage) or when the
+    /// Coronado's entrance clears the field (see BossIntro): stops counting as
+    /// hittable, turns and walks off, then disappears. OnDied still fires on
+    /// the way out so the spawner's alive count stays right. With
+    /// <paramref name="direction"/> given (BossIntro sends every enemy the same
+    /// way, north into the fog) that direction is used as-is; left null, it
+    /// falls back to away-from-the-fire like before.
     /// </summary>
-    public void Retreat()
+    public void Retreat(Vector3? direction = null)
     {
         if (m_Retreating || !IsAlive)
             return;
@@ -295,6 +299,14 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
         m_Retreating = true;
         m_Hits = 0;
         m_RetreatEndTime = Time.time + m_RetreatDuration;
+
+        if (direction.HasValue)
+        {
+            Vector3 fixedDirection = direction.Value;
+            fixedDirection.y = 0f;
+            m_RetreatDirection = fixedDirection.sqrMagnitude > 0.0001f ? fixedDirection.normalized : -transform.forward;
+            return;
+        }
 
         Vector3 source = m_Campfire != null ? m_Campfire.transform.position : transform.position - transform.forward;
         Vector3 away = transform.position - source;

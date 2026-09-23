@@ -51,6 +51,11 @@ public class GameManager : MonoBehaviour
         "Falls back to the procedural laugh when empty.")]
     [SerializeField] AudioClip m_LaughSfx;
 
+    [Header("Derrota por el Coronado (ver JEFE_FINAL.md 7.1)")]
+    [Tooltip("Segundos de negro y silencio antes de reiniciar. El jefe ya dejó la pantalla en " +
+        "negro cuando llama a LoseToCoronado(); esto es solo la espera.")]
+    [SerializeField] float m_JumpscareRestartDelay = 3f;
+
     [Header("Opening")]
     [Tooltip("Holds the night until the player shoots the start target behind the campfire " +
         "(GameStartTarget calls BeginNight). Off restores the old behaviour: the night runs " +
@@ -67,6 +72,7 @@ public class GameManager : MonoBehaviour
     bool m_GameOver;
     bool m_FireOut;
     bool m_Started;
+    bool m_BossPhaseActive;
 
     /// <summary>Survival progress toward victory, 0-1. Read by NightEnvironmentController,
     /// which brings the dawn in across the whole sky.</summary>
@@ -74,6 +80,9 @@ public class GameManager : MonoBehaviour
 
     /// <summary>True once the night is running (see <see cref="BeginNight"/>).</summary>
     public bool HasStarted => m_Started;
+
+    /// <summary>True from the Coronado's entrance onward (see <see cref="SetBossPhaseActive"/>).</summary>
+    public bool BossPhaseActive => m_BossPhaseActive;
 
     void Awake()
     {
@@ -155,6 +164,19 @@ public class GameManager : MonoBehaviour
     }
 
     /// <summary>
+    /// Called once by BossIntro when the Coronado's entrance begins (see
+    /// JEFE_FINAL.md 3). Stops the three spawners - the "WaveManager" - for
+    /// the rest of the night and, while active, keeps <see cref="HandleRelit"/>
+    /// from waking them back up if the player relights the fire mid-fight.
+    /// </summary>
+    public void SetBossPhaseActive(bool active)
+    {
+        m_BossPhaseActive = active;
+        if (active)
+            SetSpawnersRunning(false);
+    }
+
+    /// <summary>
     /// The campfire went out. Not a loss: the night stops advancing (the
     /// survival clock pauses) and the player must relight the fire with logs
     /// while the normal enemies retreat and a faster, tougher swarm closes in.
@@ -202,7 +224,11 @@ public class GameManager : MonoBehaviour
             m_HunterSpawner.ExitSwarmMode();
         }
 
-        SetSpawnersRunning(true);
+        // The Coronado's entrance stops the spawners for good (see
+        // SetBossPhaseActive); relighting the fire during the boss phase must
+        // not wake them back up.
+        if (!m_BossPhaseActive)
+            SetSpawnersRunning(true);
     }
 
     void HandlePlayerDied()
@@ -241,6 +267,24 @@ public class GameManager : MonoBehaviour
         Play2DSound(ProceduralSfx.BirdSong);
         EndGameBanner.Show(true, m_PlayerHealth != null ? m_PlayerHealth.Head : null);
         StartCoroutine(RestartAfter(m_VictoryLitDuration));
+    }
+
+    /// <summary>
+    /// The Coronado catching the player (JEFE_FINAL.md 7.1): unlike the normal
+    /// <see cref="Lose"/>, this is a silent jumpscare straight to black - no
+    /// laugh, no "Has perdido" card ("sin texto"). Coronado plays out the
+    /// freeze/lunge/scream sequence and leaves the screen black itself, then
+    /// calls this to stop the spawners and schedule the reload after three
+    /// seconds of nothing.
+    /// </summary>
+    public void LoseToCoronado()
+    {
+        if (m_GameOver)
+            return;
+        m_GameOver = true;
+
+        SetSpawnersRunning(false);
+        StartCoroutine(RestartAfter(m_JumpscareRestartDelay));
     }
 
     void Lose()
@@ -317,6 +361,11 @@ public class GameManager : MonoBehaviour
 
     void Restart()
     {
+        // AudioListener.volume is a static, global switch (see Coronado's
+        // catch sequence, which mutes it for the freeze and the final black
+        // silence) and does not reset itself across a scene reload - without
+        // this the whole restarted night would stay silent.
+        AudioListener.volume = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 }

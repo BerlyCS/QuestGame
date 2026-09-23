@@ -55,6 +55,11 @@ public class CampfireFuel : MonoBehaviour
     [SerializeField] float m_MinFirePitch = 0.6f;
     [SerializeField] float m_MaxFirePitch = 1.25f;
 
+    [Header("Threat lean (see JEFE_FINAL.md 6: the flame as a permanent compass)")]
+    [Tooltip("How far the flame tilts away from a nearby threat (the Coronado), capped so it " +
+        "never fully turns its back on the fire's own base shape.")]
+    [SerializeField] float m_MaxLeanAngle = 40f;
+
     [Header("Events")]
     [SerializeField] UnityEvent m_OnFuelChanged = new UnityEvent();
     [SerializeField] UnityEvent m_OnIgnited = new UnityEvent();
@@ -64,6 +69,10 @@ public class CampfireFuel : MonoBehaviour
     float m_Flare;
     bool m_WasBurning;
     AudioSource m_FireAudio;
+    float m_AudioDuckMultiplier = 1f;
+    float m_ProximityDrainMultiplier = 1f;
+    Quaternion m_FlameNeutralRotation;
+    bool m_FlameNeutralCached;
 
     public float MaxFuel => m_MaxFuel;
     public float CurrentFuel => m_CurrentFuel;
@@ -88,6 +97,8 @@ public class CampfireFuel : MonoBehaviour
         m_FireAudio.playOnAwake = false;
         m_FireAudio.spatialBlend = 1f;
 
+        CacheFlameNeutralRotation();
+
         m_CurrentFuel = Mathf.Clamp(m_StartingFuel, 0f, m_MaxFuel);
         m_WasBurning = IsBurning;
         ApplyVisuals();
@@ -106,7 +117,7 @@ public class CampfireFuel : MonoBehaviour
         if (m_CurrentFuel <= 0f || !m_BurnsOverTime)
             return;
 
-        AddFuel(-m_BurnRatePerSecond * Time.deltaTime, false);
+        AddFuel(-m_BurnRatePerSecond * m_ProximityDrainMultiplier * Time.deltaTime, false);
     }
 
     /// <summary>
@@ -168,6 +179,81 @@ public class CampfireFuel : MonoBehaviour
         ApplyVisuals();
     }
 
+    /// <summary>
+    /// Scales the crackle's volume on top of the fuel-driven level, without
+    /// touching the fuel itself: the fire keeps burning and lighting the camp
+    /// normally, only its sound is muffled. Used by BossIntro to quiet the
+    /// world for the Coronado's entrance (see JEFE_FINAL.md 3); 1 is normal.
+    /// </summary>
+    public void SetAudioDuckMultiplier(float multiplier)
+    {
+        m_AudioDuckMultiplier = Mathf.Clamp01(multiplier);
+        ApplyVisuals();
+    }
+
+    /// <summary>
+    /// Scales the passive burn rate on top of the normal drain - used by the
+    /// Coronado's Fase 3 (menos de 3 m): its closeness burns the fire twice as
+    /// fast (see JEFE_FINAL.md 4). 1 is normal; call with 1 again to clear it.
+    /// </summary>
+    public void SetProximityDrainMultiplier(float multiplier)
+    {
+        m_ProximityDrainMultiplier = Mathf.Max(0f, multiplier);
+    }
+
+    /// <summary>
+    /// Leans the flame away from a nearby threat (the Coronado) - a permanent
+    /// compass: whichever way the flame tilts, that is where the danger is
+    /// (see JEFE_FINAL.md 6). Recomputed fresh from the flame's own neutral
+    /// shape every call, capped at <see cref="m_MaxLeanAngle"/>, so it tracks
+    /// the threat smoothly as it moves without drifting or needing a reset.
+    /// Pass null to let the flame settle back to its neutral, upright shape.
+    /// </summary>
+    public void SetThreatPosition(Vector3? worldPosition)
+    {
+        if (m_FlameParticles == null)
+            return;
+
+        // A plain field initializer does not run for a component deserialized
+        // from a scene (only Instantiate()/AddComponent() get that) - without
+        // this guard, a call landing before Awake() ran would cap the lean
+        // against the degenerate all-zero Quaternion instead of identity, and
+        // Quaternion.RotateTowards silently ignores the cap in that case.
+        if (!m_FlameNeutralCached)
+            CacheFlameNeutralRotation();
+
+        if (!worldPosition.HasValue)
+        {
+            m_FlameParticles.transform.localRotation = m_FlameNeutralRotation;
+            return;
+        }
+
+        Vector3 away = transform.position - worldPosition.Value;
+        away.y = 0f;
+        if (away.sqrMagnitude < 0.0001f)
+        {
+            m_FlameParticles.transform.localRotation = m_FlameNeutralRotation;
+            return;
+        }
+
+        // The away direction is computed in world space but applied as a local
+        // rotation, so it still leans correctly even if the campfire itself
+        // were ever rotated. "Fully leaned" would point the flame's local
+        // forward straight away from the threat; RotateTowards caps how far
+        // it actually gets there from its neutral shape.
+        Vector3 localAway = transform.InverseTransformDirection(away.normalized);
+        Quaternion desired = Quaternion.LookRotation(localAway, Vector3.up);
+        m_FlameParticles.transform.localRotation = Quaternion.RotateTowards(m_FlameNeutralRotation, desired, m_MaxLeanAngle);
+    }
+
+    /// <summary>Caches the flame's authored rotation once, so leaning always has a sane baseline to return to and rotate from.</summary>
+    void CacheFlameNeutralRotation()
+    {
+        if (m_FlameParticles != null)
+            m_FlameNeutralRotation = m_FlameParticles.transform.localRotation;
+        m_FlameNeutralCached = true;
+    }
+
     void ApplyVisuals()
     {
         float n = Fuel01;
@@ -202,7 +288,7 @@ public class CampfireFuel : MonoBehaviour
 
         if (m_FireAudio != null)
         {
-            m_FireAudio.volume = Mathf.Lerp(m_MinFireVolume, m_MaxFireVolume, n);
+            m_FireAudio.volume = Mathf.Lerp(m_MinFireVolume, m_MaxFireVolume, n) * m_AudioDuckMultiplier;
             m_FireAudio.pitch = Mathf.Lerp(m_MinFirePitch, m_MaxFirePitch, n);
         }
     }

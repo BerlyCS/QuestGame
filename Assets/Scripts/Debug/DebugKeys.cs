@@ -36,6 +36,18 @@ public class DebugKeys : MonoBehaviour
     [Tooltip("Second the 'N' key jumps the survival clock to.")]
     float m_SkipToSeconds = 170f;
 
+    [SerializeField]
+    [Tooltip("'B' invokes the Coronado 15 m in front of the player, to test the gaze-freeze rule.")]
+    Coronado m_Coronado;
+
+    [SerializeField]
+    [Tooltip("Distance the 'B' key places the Coronado at.")]
+    float m_CoronadoSummonDistance = 15f;
+
+    [SerializeField]
+    [Tooltip("'J' fires the Coronado's entrance immediately, bypassing the survival-clock gate.")]
+    BossIntro m_BossIntro;
+
     void Update()
     {
         if (!m_ShortcutsEnabled)
@@ -56,6 +68,12 @@ public class DebugKeys : MonoBehaviour
 
         if (keyboard.nKey.wasPressedThisFrame && m_GameManager != null)
             m_GameManager.DebugSetElapsed(m_SkipToSeconds);
+
+        if (keyboard.bKey.wasPressedThisFrame && m_Coronado != null)
+            m_Coronado.DebugSummon(m_CoronadoSummonDistance);
+
+        if (keyboard.jKey.wasPressedThisFrame && m_BossIntro != null)
+            m_BossIntro.DebugTriggerNow();
 
         // '4' instantly burns the fire out, to test the outage (fast swarm,
         // retreating enemies, relight-to-resume) without waiting.
