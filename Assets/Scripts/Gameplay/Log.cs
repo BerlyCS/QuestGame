@@ -27,11 +27,17 @@ public class Log : MonoBehaviour
 
     [SerializeField] UnityEvent m_OnConsumed = new UnityEvent();
 
+    [SerializeField]
+    [Tooltip("Fired the first time a hand takes hold of this log, before it is ever fed " +
+        "to the fire. The prologue uses it to raise the campfire's drop-off cue.")]
+    UnityEvent m_OnGrabbed = new UnityEvent();
+
     Grabbable m_Grabbable;
     bool m_HasBeenGrabbed;
     bool m_Consumed;
 
     public UnityEvent OnConsumed => m_OnConsumed;
+    public UnityEvent OnGrabbed => m_OnGrabbed;
 
     void Awake()
     {
@@ -46,8 +52,11 @@ public class Log : MonoBehaviour
 
     void HandlePointerEvent(PointerEvent evt)
     {
-        if (evt.Type == PointerEventType.Select)
-            m_HasBeenGrabbed = true;
+        if (evt.Type != PointerEventType.Select || m_HasBeenGrabbed)
+            return;
+
+        m_HasBeenGrabbed = true;
+        m_OnGrabbed.Invoke();
     }
 
     void OnTriggerEnter(Collider other) => TryConsume(other);

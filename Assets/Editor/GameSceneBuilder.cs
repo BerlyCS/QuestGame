@@ -44,8 +44,10 @@ public static class GameSceneBuilder
     // player rather than stocky.
     const float k_EnemyWidthFactor = 0.85f;
     const string k_NightSkyMaterialPath = "Assets/Day-Night Skyboxes/Materials/SkyMidnight.mat";
-    const string k_LogModelPath = "Assets/Static Soul Studio/Wood Pack/Built-in/Prefabs/Log_1.prefab";
-    const float k_LogModelLength = 0.7f;
+    const string k_LogModelPath = "Assets/Models/Log/log.fbx";
+    const string k_LogTexturePath = "Assets/Models/Log/DefaultMaterial_BaseColor.png";
+    // The replacement log is intentionally 20% larger than the old wood-pack one.
+    const float k_LogModelLength = 0.84f;
     const string k_GroundTexturePath = "Assets/TerrainTexturesPackFree/TerrainTextures/GroundDryLeaves01.png";
     const string k_GroundNormalPath = "Assets/TerrainTexturesPackFree/TerrainTextures/GroundCracked01_N.png";
     const string k_MoonTexturePath = "Assets/Textures/MoonAlbedo.png";
@@ -58,6 +60,7 @@ public static class GameSceneBuilder
 
     static Material s_Ground;
     static Material s_Wood;
+    static Material s_Log;
     static Material s_Stone;
     static Material s_Tent;
     static Material s_Trunk;
@@ -890,10 +893,10 @@ public static class GameSceneBuilder
     {
         var log = new GameObject("Log");
 
-        // Visual comes from the "Low Poly Wood Pack" (the plain brown Log_1, not the
-        // rotten/broken variants). The pack isn't authored at the size this game uses,
-        // so the model is normalised to k_LogModelLength and recentred on the root's
-        // pivot, keeping the pile/tutorial/spawner placement numbers meaningful.
+        // Visual comes from the replacement log model (a single wood-stack mesh).
+        // It isn't authored at the size this game uses, so the model is normalised
+        // to k_LogModelLength and recentred on the root's pivot, keeping the
+        // pile/tutorial/spawner placement numbers meaningful.
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(k_LogModelPath);
         if (model != null)
         {
@@ -901,6 +904,14 @@ public static class GameSceneBuilder
             visuals.name = "Log Model";
             visuals.transform.SetParent(log.transform, false);
             NormalizeModel(visuals, k_LogModelLength);
+
+            // The FBX ships an external texture rather than a usable material, so the
+            // albedo is applied explicitly just like the axe.
+            s_Log = AssetDatabase.LoadAssetAtPath<Material>($"{k_MaterialFolder}/M_Log.mat");
+            if (s_Log == null)
+                s_Log = CreateTexturedMaterial("M_Log", k_LogTexturePath);
+            foreach (var renderer in visuals.GetComponentsInChildren<Renderer>())
+                renderer.sharedMaterial = s_Log;
         }
         else
         {

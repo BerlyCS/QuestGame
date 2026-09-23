@@ -8,7 +8,10 @@ using UnityEngine;
 /// The camp opens in late afternoon with a dead fire. The only cue is the log
 /// pile: every log glows on its own surface (see <see cref="EmissionPulse"/>),
 /// so the player is pulled to the natural first action - carry one log into the
-/// fire - and nothing else blinks at the same time to overload them. As soon as
+/// fire - and nothing else blinks at the same time to overload them. Picking a
+/// log up raises a sphere on the campfire (see <see cref="GuideBlink"/>); the
+/// two cues stay up together, even if the log is dropped, until the fire is
+/// actually fed, so the beat reads as a two-step tutorial. As soon as
 /// the fire is fed it swells back to life (see <see cref="CampfireFuel"/>'s
 /// visual ramp), the dusk rushes the rest of the way to night, and the moon
 /// opens red (see <see cref="NightEnvironmentController"/>); if the player never
@@ -41,6 +44,8 @@ public class PrologueController : MonoBehaviour
     bool m_NightStarted;
     EmissionPulse m_AxeHighlight;
     Grabbable m_AxeGrabbable;
+    GuideBlink m_CampfireCue;
+    GameObject m_CampfireCueRoot;
 
     public void Inject(GameManager gameManager, NightEnvironmentController night, CampfireFuel campfire, TreasureReveal treasure)
     {
@@ -72,6 +77,9 @@ public class PrologueController : MonoBehaviour
     {
         if (m_Campfire != null)
             m_Campfire.OnFuelChanged.RemoveListener(HandleFuelChanged);
+
+        foreach (var log in FindObjectsByType<Log>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            log.OnGrabbed.RemoveListener(HandleLogGrabbed);
     }
 
     void Update()
@@ -137,6 +145,7 @@ public class PrologueController : MonoBehaviour
         m_CuesOver = true;
 
         SetLogCues(false);
+        ClearCampfireCue();
 
         if (m_Treasure != null)
             m_Treasure.Reveal();
@@ -198,7 +207,48 @@ public class PrologueController : MonoBehaviour
             if (pulse == null)
                 pulse = log.gameObject.AddComponent<EmissionPulse>();
             pulse.SetActive(active);
+
+            // Taking a log raises the campfire's drop-off cue (HandleLogGrabbed).
+            // Dropping it changes nothing, so the log glow and the campfire
+            // sphere stay up together until the fire is actually fed.
+            log.OnGrabbed.RemoveListener(HandleLogGrabbed);
+            if (active)
+                log.OnGrabbed.AddListener(HandleLogGrabbed);
         }
+    }
+
+    /// <summary>
+    /// First log in hand: raise the campfire's drop-off sphere so the player
+    /// knows where to carry it. It stays until the fire is fed, even if the log
+    /// is dropped - that persistence is what makes the beat teach itself.
+    /// </summary>
+    void HandleLogGrabbed()
+    {
+        if (m_CuesOver || m_Campfire == null || m_CampfireCue != null)
+            return;
+
+        // The cue sits on its own anchor rather than on the campfire itself, so
+        // tearing it down takes the marker sphere with it (destroying a
+        // GuideBlink component alone leaves its "Guide Marker" child behind).
+        var anchor = new GameObject("Campfire Cue");
+        anchor.transform.SetParent(m_Campfire.transform, false);
+
+        m_CampfireCueRoot = anchor;
+        m_CampfireCue = anchor.AddComponent<GuideBlink>();
+        m_CampfireCue.SetActive(true);
+    }
+
+    /// <summary>Removes the campfire's drop-off cue once the log is delivered.</summary>
+    void ClearCampfireCue()
+    {
+        if (m_CampfireCueRoot == null)
+            return;
+
+        m_CampfireCue.SetActive(false);
+        Destroy(m_CampfireCueRoot);
+
+        m_CampfireCue = null;
+        m_CampfireCueRoot = null;
     }
 
     /// <summary>

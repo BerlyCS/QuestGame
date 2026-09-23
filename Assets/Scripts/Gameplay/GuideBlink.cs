@@ -15,6 +15,12 @@ using UnityEngine;
 /// disappears the moment the player grabs the axe, and the logs' markers stay
 /// up while the fire is low and vanish once the fire has been fed back to
 /// health (see <see cref="CampfireFuel"/>).
+///
+/// The markers built by the scene builder are given their shared glow material,
+/// but <see cref="PrologueController"/> also adds a marker at runtime (the
+/// campfire's drop-off cue, raised once the player picks up a log); when no
+/// material has been injected this component builds its own additive one, so
+/// the cue still reads without any authored asset.
 /// </summary>
 [DisallowMultipleComponent]
 public class GuideBlink : MonoBehaviour
@@ -56,12 +62,25 @@ public class GuideBlink : MonoBehaviour
     Renderer m_Marker;
     MaterialPropertyBlock m_Block;
     bool m_Done;
+    bool m_Active = true;
 
     /// <summary>
     /// Scene-builder hook: the marker material has no Interaction SDK injection
     /// point, so the builder hands it over explicitly.
     /// </summary>
     public void InjectGlowMaterial(Material glowMaterial) => m_GlowMaterial = glowMaterial;
+
+    /// <summary>
+    /// Shows or hides the marker at runtime. The prologue adds the campfire's
+    /// drop-off cue hidden and only raises it once the player picks up a log,
+    /// then clears it when the fire is fed.
+    /// </summary>
+    public void SetActive(bool active)
+    {
+        m_Active = active;
+        if (!active && m_Marker != null)
+            m_Marker.enabled = false;
+    }
 
     void Start()
     {
@@ -96,6 +115,12 @@ public class GuideBlink : MonoBehaviour
             return;
         }
 
+        if (!m_Active)
+        {
+            m_Marker.enabled = false;
+            return;
+        }
+
         m_Marker.enabled = true;
 
         // The glow material is additive, so the pulse reads as a brightness
@@ -113,7 +138,8 @@ public class GuideBlink : MonoBehaviour
 
     void BuildMarker()
     {
-        if (m_GlowMaterial == null)
+        var material = ResolveGlowMaterial();
+        if (material == null)
             return;
 
         // Built without a collider on purpose. The marker is parented under the
@@ -131,7 +157,7 @@ public class GuideBlink : MonoBehaviour
         m_Marker = sphere.AddComponent<MeshRenderer>();
         // The pulse rides on a per-renderer property block, so every marker can
         // share the one indicator material instead of cloning it.
-        m_Marker.sharedMaterial = m_GlowMaterial;
+        m_Marker.sharedMaterial = material;
         m_Marker.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         m_Marker.receiveShadows = false;
 
@@ -140,6 +166,43 @@ public class GuideBlink : MonoBehaviour
         sphere.transform.localPosition = ComputeMarkerLocalPosition();
         sphere.transform.localRotation = Quaternion.identity;
         sphere.transform.localScale = Vector3.one * m_SphereScale;
+
+        m_Marker.enabled = m_Active;
+    }
+
+    /// <summary>
+    /// The shared indicator material when one was injected; otherwise an
+    /// additive, unlit, depth-write-free glow built on the spot, matching the
+    /// scene builder's marker material so a runtime marker looks the same as an
+    /// authored one.
+    /// </summary>
+    Material ResolveGlowMaterial()
+    {
+        if (m_GlowMaterial != null)
+            return m_GlowMaterial;
+
+        var shader = Shader.Find("Universal Render Pipeline/Unlit")
+            ?? Shader.Find("Unlit/Transparent")
+            ?? Shader.Find("Standard");
+        if (shader == null)
+            return null;
+
+        var material = new Material(shader) { name = "M_GuideGlow (Runtime)" };
+        if (material.HasProperty("_Surface"))
+        {
+            material.SetFloat("_Surface", 1f);
+            material.SetFloat("_Blend", 2f);
+            material.SetFloat("_AlphaClip", 0f);
+            material.SetFloat("_ZWrite", 0f);
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            material.SetShaderPassEnabled("ShadowCaster", false);
+        }
+
+        return material;
     }
 
     /// <summary>

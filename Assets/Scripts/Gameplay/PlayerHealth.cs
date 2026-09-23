@@ -13,6 +13,10 @@ public class PlayerHealth : MonoBehaviour
 {
     [SerializeField] float m_MaxHealth = 150f;
 
+    [Header("Pain")]
+    [Tooltip("Random grunt played when an enemy lands a hit. Falls back to the clips under Resources/Pain when empty.")]
+    [SerializeField] AudioClip[] m_PainSfx;
+
     [Header("Regeneration")]
     [Tooltip("Seconds after the last hit before health starts coming back.")]
     [SerializeField] float m_RegenDelay = 6f;
@@ -31,6 +35,8 @@ public class PlayerHealth : MonoBehaviour
     float m_LastDamageTime = float.NegativeInfinity;
     Material m_Instance;
     Renderer m_Vignette;
+    AudioClip[] m_PainClips;
+    AudioSource m_PainSource;
 
     public UnityEvent OnDied => m_OnDied;
     public float Health01 => Mathf.Clamp01(m_Health / m_MaxHealth);
@@ -42,6 +48,17 @@ public class PlayerHealth : MonoBehaviour
     void Awake()
     {
         m_Health = m_MaxHealth;
+
+        // Pain grunts are the player's own voice, so they play non-spatialized
+        // (2D) and must survive the early return below when the vignette is
+        // unwired. Clips imported under Resources/Pain are found automatically.
+        m_PainClips = m_PainSfx != null && m_PainSfx.Length > 0
+            ? m_PainSfx
+            : Resources.LoadAll<AudioClip>("Pain");
+        m_PainSource = gameObject.AddComponent<AudioSource>();
+        m_PainSource.playOnAwake = false;
+        m_PainSource.spatialBlend = 0f;
+
         if (m_Head == null && Camera.main != null)
             m_Head = Camera.main.transform;
         if (m_Head == null || m_VignetteMaterial == null)
@@ -101,9 +118,21 @@ public class PlayerHealth : MonoBehaviour
         m_Health = Mathf.Max(0f, m_Health - amount);
         m_HurtPulse = 1f;
         m_LastDamageTime = Time.time;
+        PlayPain();
 
         if (m_Health <= 0f)
             m_OnDied.Invoke();
+    }
+
+    /// <summary>Picks one of the pain grunts at random so repeated hits do not sound looped.</summary>
+    void PlayPain()
+    {
+        if (m_PainSource == null || m_PainClips == null || m_PainClips.Length == 0)
+            return;
+
+        AudioClip clip = m_PainClips[Random.Range(0, m_PainClips.Length)];
+        if (clip != null)
+            m_PainSource.PlayOneShot(clip);
     }
 
     void OnDestroy()
