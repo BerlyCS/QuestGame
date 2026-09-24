@@ -108,7 +108,8 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     static readonly int k_HitHash = Animator.StringToHash("Hit");
     static readonly int k_DeathHash = Animator.StringToHash("Death");
 
-    int m_Hits;
+    float m_Hits;
+    float m_HitScale = 1f;
     float m_BobPhase;
     float m_NextStepTime;
     PlayerHealth m_Player;
@@ -127,7 +128,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     static Material s_RedEyeMaterial;
 
     public UnityEvent OnDied => m_OnDied;
-    public bool IsAlive => m_Hits > 0;
+    public bool IsAlive => m_Hits > 0f;
 
     /// <summary>True for the red Cazadores (spawned by HunterSpawner), which the fire outage replaces the normal enemies with.</summary>
     public bool IsHunter => m_HuntsPlayer;
@@ -160,7 +161,25 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     public void SetMaxHits(int hits)
     {
         m_MaxHits = Mathf.Max(1, hits);
-        m_Hits = m_MaxHits;
+        m_Hits = m_MaxHits * m_HitScale;
+    }
+
+    /// <summary>
+    /// Scales this skeleton's combat stats for the fire-outage kill-streak (see
+    /// HunterSpawner): faster, hitting harder and soaking more hits, so every
+    /// replacement is a little worse than the one before it. Applied on top of
+    /// whatever the spawner already set, and hit points are kept fractional so a
+    /// modest per-kill percentage still adds up over a long outage.
+    /// </summary>
+    public void ApplyOutageEscalation(float scale)
+    {
+        if (scale <= 1f)
+            return;
+
+        m_MoveSpeed *= scale;
+        m_PlayerDamage *= scale;
+        m_HitScale *= scale;
+        m_Hits = m_MaxHits * m_HitScale;
     }
 
     /// <summary>Overrides the walk speed so the fire-outage swarm can be faster.</summary>
@@ -228,7 +247,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     void Awake()
     {
-        m_Hits = m_MaxHits;
+        m_Hits = m_MaxHits * m_HitScale;
 
         if (m_Body != null)
             m_BodyBasePosition = m_Body.localPosition;
@@ -460,7 +479,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         if (m_Animator != null)
             m_Animator.SetTrigger(k_HitHash);
 
-        if (m_Hits <= 0)
+        if (m_Hits <= 0f)
             Die();
     }
 
@@ -543,11 +562,11 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     {
         m_Hits = 0;
 
-        // With an Animator the model plays the death out, so the particle burst
-        // is skipped and the object is left in place long enough to be seen.
+        // The black particle burst plays alongside the animated death (or on its
+        // own), so every skeleton dissolves into dark smoke as it goes down.
         bool animated = m_Animator != null;
         SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume,
-            m_DeathParticles && !animated);
+            m_DeathParticles);
         m_OnDied.Invoke();
 
         if (animated)

@@ -22,12 +22,12 @@ using UnityEngine.SceneManagement;
 /// target behind the campfire (see <see cref="GameStartTarget"/>).
 ///
 /// Fire outage (not a loss): when the campfire goes out
-/// (CampfireFuel.OnExtinguished) the survival clock pauses, the fire-out
-/// sting plays,
-/// the Caminantes and Lanzahuesos retreat off into the dark, and a faster,
-/// tougher swarm of Cazadores replaces them. Relighting the fire
-/// (CampfireFuel.OnIgnited) kills the swarm with the lego-breaking sound and
-/// resumes the night where it left off.
+/// (CampfireFuel.OnExtinguished) the night keeps running - the survival clock
+/// is not paused, so letting the dark drag on is never a way to survive it -
+/// the fire-out sting plays, the Caminantes and Lanzahuesos retreat off into
+/// the dark, and red-eyed Cazadores swarm the player and keep coming until the
+/// fire is relit (CampfireFuel.OnIgnited), which kills the swarm with the
+/// lego-breaking sound.
 /// </summary>
 [DisallowMultipleComponent]
 public class GameManager : MonoBehaviour
@@ -45,7 +45,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] float m_VictoryLitDuration = 10f;
 
     [Header("Night difficulty (steps every 30 s by default)")]
-    [Tooltip("Seconds per difficulty step. Every step the enemies walk faster and hit the fire and the player harder.")]
+    [Tooltip("Seconds per difficulty step. Every step the enemies walk faster, hit the fire and the player harder, " +
+        "and the spawners keep one more enemy of each kind alive at once.")]
     [SerializeField] float m_DifficultyStepSeconds = 30f;
     [Tooltip("Enemy walk-speed multiplier added per step (1 = no ramp).")]
     [SerializeField] float m_SpeedRampPerStep = 0.15f;
@@ -61,9 +62,10 @@ public class GameManager : MonoBehaviour
     [SerializeField] bool m_SpawnOpeningWave = true;
 
     [Header("First fire-out lesson (one time only)")]
-    [Tooltip("How long the campfire blinks and the gentle red-eyed horde lingers after the first fire-out.")]
+    [Tooltip("How long the campfire blinks and the gentle red-eyed horde lingers after the first fire-out. " +
+        "The horde keeps replenishing itself until then; after this it escalates to the normal swarm.")]
     [SerializeField] float m_FirstOutageCueDuration = 30f;
-    [Tooltip("How many very slow red-eyed Cazadores appear around the player the first time the fire dies.")]
+    [Tooltip("How many very slow red-eyed Cazadores the first fire-out horde keeps alive around the player at once.")]
     [SerializeField] int m_FirstOutageHordeCount = 8;
     [SerializeField] float m_FirstOutageHordeSpeed = 0.3f;
     [SerializeField] float m_FirstOutageHordeDamage = 5f;
@@ -97,6 +99,12 @@ public class GameManager : MonoBehaviour
              "A one-shot, so it only ever plays when the prologue gate is shot.")]
     [SerializeField] AudioClip m_NightSfx;
 
+    [Header("Ambience")]
+    [Tooltip("Volume of the looping forest bed that plays under the night. " +
+        "The clip is loaded from Resources/Ambience/dark_ambience_forest so the " +
+        "scene needs no AudioSource wired by hand.")]
+    [SerializeField, Range(0f, 1f)] float m_AmbienceVolume = 0.35f;
+
     [Header("Ending twist (see DISEÑO.md 1.3)")]
     [SerializeField] Renderer m_ChestRenderer;
     [SerializeField] Material m_TeethMaterial;
@@ -107,6 +115,8 @@ public class GameManager : MonoBehaviour
     bool m_Started;
     bool m_BossPhaseActive;
     bool m_FirstOutagePlayed;
+    AudioSource m_AmbienceSource;
+    float m_AmbienceDuck = 1f;
 
     /// <summary>Survival progress toward victory, 0-1. Read by NightEnvironmentController,
     /// which brings the dawn in across the whole sky.</summary>
@@ -194,6 +204,8 @@ public class GameManager : MonoBehaviour
         if (m_NightSfx != null)
             ProceduralSfx.PlayAt(m_NightSfx, campAnchor.position + Vector3.up * 1.5f, 1f, 1f);
 
+        StartAmbience();
+
         SetCampfireBurning(true);
         SetSpawnersRunning(true);
 
@@ -216,13 +228,14 @@ public class GameManager : MonoBehaviour
     void Update()
     {
         // The difficulty is a function of the survival clock, so it is refreshed
-        // every frame (and held still while the clock is paused by the outage).
+        // every frame.
         UpdateDifficulty();
 
-        // The clock pauses while the fire is out (see HandleExtinguished): the
-        // player cannot outlast the darkness, they have to relight the fire. It
-        // also does not run at all until the night has been started.
-        if (m_GameOver || m_FireOut || !m_Started)
+        // The clock keeps running while the fire is out (see HandleExtinguished):
+        // an outage costs the player firelight and brings the swarm, but never
+        // freezes time, so sitting in the dark cannot outlast the night. It does
+        // not run at all until the night has been started.
+        if (m_GameOver || !m_Started)
             return;
         m_Elapsed += Time.deltaTime;
         if (m_Elapsed >= m_SurvivalDuration)
@@ -238,6 +251,7 @@ public class GameManager : MonoBehaviour
     void UpdateDifficulty()
     {
         int step = m_DifficultyStepSeconds <= 0f ? 0 : Mathf.FloorToInt(m_Elapsed / m_DifficultyStepSeconds);
+        NightDifficulty.Stage = step;
         NightDifficulty.SpeedMultiplier = 1f + step * m_SpeedRampPerStep;
         NightDifficulty.FireDamageMultiplier = 1f + step * m_FireDamageRampPerStep;
         NightDifficulty.PlayerDamageMultiplier = 1f + step * m_PlayerDamageRampPerStep;
@@ -266,9 +280,10 @@ public class GameManager : MonoBehaviour
     }
 
     /// <summary>
-    /// The campfire went out. Not a loss: the night stops advancing (the
-    /// survival clock pauses) and the player must relight the fire with logs
-    /// while the normal enemies retreat and a faster, tougher swarm closes in.
+    /// The campfire went out. Not a loss: the night keeps advancing (the
+    /// survival clock never pauses) and the player must relight the fire with
+    /// logs while the normal enemies retreat and a red-eyed swarm closes in and
+    /// keeps replenishing until the fire is back.
     /// </summary>
     void HandleExtinguished()
     {
@@ -310,8 +325,10 @@ public class GameManager : MonoBehaviour
     /// The first time the fire dies: fast-blinks the campfire and rings the
     /// player with very slow, red-eyed Cazadores for
     /// <see cref="m_FirstOutageCueDuration"/> seconds. They barely hurt, so the
-    /// lesson is "feed the fire", not "fight". If the player still has not
-    /// relit by the end, the normal swarm takes over.
+    /// lesson is "feed the fire", not "fight" - but the ring is kept full (see
+    /// HunterSpawner.SpawnSpecialHorde), so it never lets the player stand in
+    /// the dark undisturbed. If the player still has not relit by the end, the
+    /// normal swarm takes over.
     /// </summary>
     IEnumerator FirstOutageRoutine()
     {
@@ -450,6 +467,46 @@ public class GameManager : MonoBehaviour
         source.spatialBlend = 0f;
         source.playOnAwake = false;
         source.PlayOneShot(clip);
+    }
+
+    /// <summary>
+    /// Starts the looping forest bed under the night. Loaded from Resources so
+    /// no AudioSource has to be wired in the scene; does nothing (with a warning)
+    /// if the clip is missing.
+    /// </summary>
+    void StartAmbience()
+    {
+        if (m_AmbienceSource != null)
+            return;
+
+        AudioClip clip = Resources.Load<AudioClip>("Ambience/dark_ambience_forest");
+        if (clip == null)
+        {
+            Debug.LogWarning(
+                "[GameManager] Forest ambience clip not found under Resources/Ambience; the night stays quiet.",
+                this);
+            return;
+        }
+
+        m_AmbienceSource = gameObject.AddComponent<AudioSource>();
+        m_AmbienceSource.clip = clip;
+        m_AmbienceSource.loop = true;
+        m_AmbienceSource.playOnAwake = false;
+        m_AmbienceSource.spatialBlend = 0f;
+        m_AmbienceSource.volume = m_AmbienceVolume * m_AmbienceDuck;
+        m_AmbienceSource.Play();
+    }
+
+    /// <summary>
+    /// Scales the ambience bed for systems that want the world quieter (see
+    /// <see cref="BossIntro"/>'s "total silence"). The multiplier is remembered
+    /// so the designer volume can be restored later.
+    /// </summary>
+    public void SetAmbienceDuck(float duck)
+    {
+        m_AmbienceDuck = Mathf.Clamp01(duck);
+        if (m_AmbienceSource != null)
+            m_AmbienceSource.volume = m_AmbienceVolume * m_AmbienceDuck;
     }
 
     IEnumerator FadeToBlackThenRestart()
