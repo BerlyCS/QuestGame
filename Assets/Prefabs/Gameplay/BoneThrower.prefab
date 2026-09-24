@@ -48,7 +48,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BoneThrower
   m_MaxHits: 1
-  m_MoveSpeed: 0.8
+  m_MoveSpeed: 0.6
   m_TurnSpeed: 540
   m_StopDistance: 8
   m_ThrowInterval: 7

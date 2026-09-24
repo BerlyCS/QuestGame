@@ -21,19 +21,19 @@ public class SkeletonSpawner : MonoBehaviour
     [Header("Activation")]
     [SerializeField] CampfireFuel m_Campfire;
     [Tooltip("Fuel level (0-1) the player must build the fire up to before the first wave starts.")]
-    [SerializeField] float m_ActivationFuelNormalized = 0.5f;
+    [SerializeField] float m_ActivationFuelNormalized = 0.3f;
 
     [Header("Spawning")]
-    [SerializeField] float m_StartDelay = 15f;
-    [SerializeField] float m_SpawnInterval = 7f;
+    [SerializeField] float m_StartDelay = 30f;
+    [SerializeField] float m_SpawnInterval = 20f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
-    [SerializeField] int m_MaxAlive = 4;
-    [SerializeField] int m_TotalToSpawn = 18;
+    [SerializeField] int m_MaxAlive = 3;
+    [SerializeField] int m_TotalToSpawn = 10;
 
     [Header("Difficulty")]
-    [SerializeField] float m_MinInterval = 3f;
-    [SerializeField] float m_IntervalRampPerSpawn = 0.05f;
+    [SerializeField] float m_MinInterval = 9f;
+    [SerializeField] float m_IntervalRampPerSpawn = 0.6f;
 
     bool m_Activated;
     float m_NextSpawnTime;
@@ -114,9 +114,10 @@ public class SkeletonSpawner : MonoBehaviour
 
     /// <summary>
     /// Force-spawns one Caminante immediately at the fixed ring, bypassing the
-    /// activation gate and wave cooldown. For debug use only (see DebugKeys).
+    /// activation gate and wave cooldown. Used for the opening beat and by
+    /// DebugKeys.
     /// </summary>
-    public void DebugSpawnNow()
+    public void SpawnNow()
     {
         if (m_Target == null || m_SkeletonPrefab == null)
             return;

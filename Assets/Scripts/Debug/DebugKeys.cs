@@ -58,13 +58,13 @@ public class DebugKeys : MonoBehaviour
             return;
 
         if (keyboard.digit1Key.wasPressedThisFrame && m_SkeletonSpawner != null)
-            m_SkeletonSpawner.DebugSpawnNow();
+            m_SkeletonSpawner.SpawnNow();
 
         if (keyboard.digit2Key.wasPressedThisFrame && m_BoneThrowerSpawner != null)
-            m_BoneThrowerSpawner.DebugSpawnNow();
+            m_BoneThrowerSpawner.SpawnNow();
 
         if (keyboard.digit3Key.wasPressedThisFrame && m_HunterSpawner != null)
-            m_HunterSpawner.DebugSpawnNow();
+            m_HunterSpawner.SpawnNow();
 
         if (keyboard.nKey.wasPressedThisFrame && m_GameManager != null)
             m_GameManager.DebugSetElapsed(m_SkipToSeconds);

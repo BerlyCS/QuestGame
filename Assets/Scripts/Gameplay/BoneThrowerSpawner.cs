@@ -20,15 +20,15 @@ public class BoneThrowerSpawner : MonoBehaviour
     [Header("Activation")]
     [SerializeField] CampfireFuel m_Campfire;
     [Tooltip("Fuel level (0-1) the player must build the fire up to before the first Lanzahuesos appears.")]
-    [SerializeField] float m_ActivationFuelNormalized = 0.6f;
+    [SerializeField] float m_ActivationFuelNormalized = 0.5f;
 
     [Header("Spawning")]
-    [SerializeField] float m_StartDelay = 35f;
-    [SerializeField] float m_SpawnInterval = 40f;
+    [SerializeField] float m_StartDelay = 30f;
+    [SerializeField] float m_SpawnInterval = 30f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
     [SerializeField] int m_MaxAlive = 1;
-    [SerializeField] int m_TotalToSpawn = 4;
+    [SerializeField] int m_TotalToSpawn = 5;
 
     bool m_Activated;
     float m_NextSpawnTime;
@@ -104,10 +104,10 @@ public class BoneThrowerSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// Force-spawns one Lanzahuesos immediately at the fixed ring, bypassing
-    /// the activation gate and cooldown. For debug use only (see DebugKeys).
+    /// Force-spawns one Lanzahuesos immediately at the fixed ring, bypassing the
+    /// activation gate and cooldown. Used for the opening beat and by DebugKeys.
     /// </summary>
-    public void DebugSpawnNow()
+    public void SpawnNow()
     {
         if (m_Target == null || m_BoneThrowerPrefab == null)
             return;

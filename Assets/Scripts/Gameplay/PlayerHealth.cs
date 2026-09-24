@@ -21,9 +21,9 @@ public class PlayerHealth : MonoBehaviour
 
     [Header("Regeneration")]
     [Tooltip("Seconds after the last hit before health starts coming back.")]
-    [SerializeField] float m_RegenDelay = 6f;
+    [SerializeField] float m_RegenDelay = 5f;
     [Tooltip("Health restored per second once the delay has passed, so the damage vignette clears.")]
-    [SerializeField] float m_RegenPerSecond = 5f;
+    [SerializeField] float m_RegenPerSecond = 6f;
 
     [SerializeField] Transform m_Head;
 

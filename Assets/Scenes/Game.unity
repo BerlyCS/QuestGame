@@ -15347,9 +15347,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 32d258986cd01b8478b1b94637bc88c2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CampfireFuel
-  m_MaxFuel: 90
+  m_MaxFuel: 120
   m_StartingFuel: 0
-  m_BurnRatePerSecond: 0.35
+  m_BurnRatePerSecond: 0.3
+  m_BurnRateMultiplier: 1
   m_BurnsOverTime: 1
   m_VisualRampSeconds: 1.6
   m_FireLight: {fileID: 1262545453}
@@ -15371,7 +15372,6 @@ MonoBehaviour:
   m_MaxFireVolume: 1
   m_MinFirePitch: 0.6
   m_MaxFirePitch: 1.25
-  m_MaxLeanAngle: 40
   m_ImpactParticleCount: 16
   m_ImpactParticleSize: 0.12
   m_ImpactLavaColor: {r: 1, g: 0.3, b: 0.05, a: 1}
@@ -15385,6 +15385,7 @@ MonoBehaviour:
   - 0.08
   m_AlertParticleCount: 8
   m_AlertVolume: 0.5
+  m_MaxLeanAngle: 40
   m_OnFuelChanged:
     m_PersistentCalls:
       m_Calls: []
@@ -41246,13 +41247,13 @@ MonoBehaviour:
   m_BoneThrowerPrefab: {fileID: 4649377922304965832, guid: 1aa642466d40e4408b0afe33c81e92d2, type: 3}
   m_Target: {fileID: 2048067828}
   m_Campfire: {fileID: 236847296}
-  m_ActivationFuelNormalized: 0.6
-  m_StartDelay: 35
-  m_SpawnInterval: 40
+  m_ActivationFuelNormalized: 0.5
+  m_StartDelay: 30
+  m_SpawnInterval: 30
   m_SpawnDistance: 10
   m_SpawnSpreadDegrees: 40
   m_MaxAlive: 1
-  m_TotalToSpawn: 4
+  m_TotalToSpawn: 5
 --- !u!4 &600352574
 Transform:
   m_ObjectHideFlags: 0
@@ -42202,7 +42203,7 @@ PrefabInstance:
     m_TransformParent: {fileID: 847923198}
     m_Modifications:
     - target: {fileID: 2705448344103058691, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: -7967597685432796875, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
     - target: {fileID: 3660728731682503161, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
@@ -54039,13 +54040,25 @@ MonoBehaviour:
   m_BoneThrowerSpawner: {fileID: 600352573}
   m_HunterSpawner: {fileID: 926656458}
   m_PlayerHealth: {fileID: 1382239415}
-  m_SurvivalDuration: 270
+  m_SurvivalDuration: 240
   m_VictoryLitDuration: 10
+  m_DifficultyStepSeconds: 30
+  m_SpeedRampPerStep: 0.15
+  m_FireDamageRampPerStep: 0.3
+  m_PlayerDamageRampPerStep: 0.1
+  m_FireBurnRamp: 2
+  m_SpawnOpeningWave: 1
+  m_FirstOutageCueDuration: 30
+  m_FirstOutageHordeCount: 8
+  m_FirstOutageHordeSpeed: 0.3
+  m_FirstOutageHordeDamage: 5
+  m_FirstOutageBlinkInterval: 0.3
+  m_FirstOutageBlinkColor: {r: 1.4, g: 0.5, b: 0.12, a: 1}
   m_DefeatFadeDuration: 1.5
   m_DefeatRestartDelay: 5
   m_LaughSfx: {fileID: 8300000, guid: b7f3c1a94e2d4f6b8a0c1d2e3f4a5b6c, type: 3}
-  m_JumpscareRestartDelay: 3
   m_FireOutSfx: {fileID: 8300000, guid: 835a3e38ef2bd9344b8cbfcfbb4dea99, type: 3}
+  m_JumpscareRestartDelay: 3
   m_WaitForStart: 1
   m_IntroSfx: {fileID: 8300000, guid: c4d8e2f16a7b4c3d9e0f1a2b3c4d5e6f, type: 3}
   m_NightSfx: {fileID: 8300000, guid: 586fc06eaace76544931ae5def4ee9e9, type: 3}
@@ -59744,7 +59757,7 @@ Transform:
   m_GameObject: {fileID: 847923197}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1, y: 0.85, z: 0.5}
+  m_LocalPosition: {x: 2.25, y: 0.85, z: 1.75}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -63769,7 +63782,7 @@ PrefabInstance:
     m_TransformParent: {fileID: 847923198}
     m_Modifications:
     - target: {fileID: 2705448344103058691, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: -7967597685432796875, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
     - target: {fileID: 3660728731682503161, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
@@ -64231,9 +64244,9 @@ MonoBehaviour:
   m_HunterPrefab: {fileID: 8431022873071226507, guid: d0e14e1ec3e414b7a813774b5622ed96, type: 3}
   m_Player: {fileID: 1382239415}
   m_GameManager: {fileID: 759823765}
-  m_StartAtSurvival: 0.3
-  m_SpawnInterval: 22
-  m_MinInterval: 12
+  m_StartAtSurvival: 0.13
+  m_SpawnInterval: 25
+  m_MinInterval: 15
   m_IntervalRampPerSpawn: 0.8
   m_SpawnDistance: 9
   m_SpreadDegrees: 50
@@ -64241,10 +64254,10 @@ MonoBehaviour:
   m_MaxAlive: 1
   m_MaxAliveLate: 2
   m_LateAtSurvival: 0.6
-  m_SwarmSpawnInterval: 1.6
-  m_SwarmMaxAlive: 15
-  m_SwarmMoveSpeed: 1.5
-  m_SwarmHits: 2
+  m_SwarmSpawnInterval: 2.5
+  m_SwarmMaxAlive: 6
+  m_SwarmMoveSpeed: 1.2
+  m_SwarmHits: 1
   m_SwarmSpawnDistance: 10
   m_AppearSfx: {fileID: 8300000, guid: 3f7a1c9e5b2d48c6a1e7d4b8c05f9a23, type: 3}
   m_AppearSfxVolume: 0.9
@@ -65239,7 +65252,7 @@ Transform:
   m_GameObject: {fileID: 939835724}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0, y: -1.76, z: 0}
+  m_LocalPosition: {x: -8, y: 0.23999977, z: -0.00000011920929}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -75505,14 +75518,14 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1091076728}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.34586996, y: 0.6167447, z: 0.6167447, w: 0.34586996}
-  m_LocalPosition: {x: -0.062431097, y: 3.716096, z: -1.9873831}
+  m_LocalRotation: {x: -0.52673167, y: -0.47175616, z: -0.4717561, w: 0.5267316}
+  m_LocalPosition: {x: 4.67701, y: 3.7160635, z: 9.916138}
   m_LocalScale: {x: 1.5, y: 1.5, z: 1.5}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 51973300}
   m_Father: {fileID: 1340610103}
-  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 121.433}
+  m_LocalEulerAnglesHint: {x: -90, y: 0, z: -83.697}
 --- !u!1 &1091536106
 GameObject:
   m_ObjectHideFlags: 0
@@ -85178,7 +85191,7 @@ PrefabInstance:
     m_TransformParent: {fileID: 847923198}
     m_Modifications:
     - target: {fileID: 2705448344103058691, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: -7967597685432796875, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
     - target: {fileID: 3660728731682503161, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
@@ -94525,7 +94538,7 @@ Transform:
   m_GameObject: {fileID: 1376216482}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0, y: 0, z: 0}
+  m_LocalPosition: {x: -4.166668, y: -2.5000007, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -95090,8 +95103,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
   m_MaxHealth: 150
   m_PainSfx: []
-  m_RegenDelay: 6
-  m_RegenPerSecond: 5
+  m_RegenDelay: 5
+  m_RegenPerSecond: 6
   m_Head: {fileID: 2048067828}
   m_VignetteMaterial: {fileID: 2100000, guid: d4923e3a8e56f40b2b3f26f7ac04fac4, type: 2}
   m_DeathFadeDuration: 1.4
@@ -99885,7 +99898,7 @@ PrefabInstance:
     m_TransformParent: {fileID: 847923198}
     m_Modifications:
     - target: {fileID: 2705448344103058691, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: -7967597685432796875, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
     - target: {fileID: 3660728731682503161, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
@@ -104724,7 +104737,7 @@ PrefabInstance:
     m_TransformParent: {fileID: 847923198}
     m_Modifications:
     - target: {fileID: 2705448344103058691, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: -7967597685432796875, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
     - target: {fileID: 3660728731682503161, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
@@ -120249,7 +120262,7 @@ PrefabInstance:
     m_TransformParent: {fileID: 847923198}
     m_Modifications:
     - target: {fileID: 2705448344103058691, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
-      propertyPath: m_Materials.Array.data[0]
+      propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: -7967597685432796875, guid: 0b1448e7b894e4b50b9fd6d417816364, type: 3}
     - target: {fileID: 3660728731682503161, guid: 892ac6a9eaf69774cb2a2dc5530bb580, type: 3}
@@ -142192,15 +142205,15 @@ MonoBehaviour:
   m_SkeletonPrefab: {fileID: 6742737224550810314, guid: 1a88b3471d82033458d40548b041a3cd, type: 3}
   m_Target: {fileID: 1382239408}
   m_Campfire: {fileID: 236847296}
-  m_ActivationFuelNormalized: 0.5
-  m_StartDelay: 15
-  m_SpawnInterval: 7
+  m_ActivationFuelNormalized: 0.3
+  m_StartDelay: 30
+  m_SpawnInterval: 20
   m_SpawnDistance: 10
   m_SpawnSpreadDegrees: 40
-  m_MaxAlive: 4
-  m_TotalToSpawn: 18
-  m_MinInterval: 3
-  m_IntervalRampPerSpawn: 0.05
+  m_MaxAlive: 3
+  m_TotalToSpawn: 10
+  m_MinInterval: 9
+  m_IntervalRampPerSpawn: 0.6
 --- !u!1 &2089610277
 GameObject:
   m_ObjectHideFlags: 0

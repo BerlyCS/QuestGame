@@ -58,9 +58,9 @@ public static class WireEnemySystems
         // The scene still carries the pre-merge fuel schema (0-1 fractions with
         // m_StartingFuelNormalized). The merged CampfireFuel works in seconds.
         var campfireSo = new SerializedObject(campfire);
-        SetFloat(campfireSo, "m_MaxFuel", 90f);
-        SetFloat(campfireSo, "m_StartingFuel", 55f);
-        SetFloat(campfireSo, "m_BurnRatePerSecond", 0.35f);
+        SetFloat(campfireSo, "m_MaxFuel", 120f);
+        SetFloat(campfireSo, "m_StartingFuel", 0f);
+        SetFloat(campfireSo, "m_BurnRatePerSecond", 0.3f);
         campfireSo.ApplyModifiedPropertiesWithoutUndo();
         EditorUtility.SetDirty(campfire);
 

@@ -41,8 +41,35 @@ public class GameManager : MonoBehaviour
     [SerializeField] PlayerHealth m_PlayerHealth;
 
     [Header("Victory")]
-    [SerializeField] float m_SurvivalDuration = 270f;
+    [SerializeField] float m_SurvivalDuration = 240f;
     [SerializeField] float m_VictoryLitDuration = 10f;
+
+    [Header("Night difficulty (steps every 30 s by default)")]
+    [Tooltip("Seconds per difficulty step. Every step the enemies walk faster and hit the fire and the player harder.")]
+    [SerializeField] float m_DifficultyStepSeconds = 30f;
+    [Tooltip("Enemy walk-speed multiplier added per step (1 = no ramp).")]
+    [SerializeField] float m_SpeedRampPerStep = 0.15f;
+    [Tooltip("Multiplier added per step to how much enemy blows drain the campfire.")]
+    [SerializeField] float m_FireDamageRampPerStep = 0.3f;
+    [Tooltip("Multiplier added per step to how much a Cazador takes off the player.")]
+    [SerializeField] float m_PlayerDamageRampPerStep = 0.1f;
+    [Tooltip("Passive burn ramp across the whole night: 2 means the fire burns 3x as fast at victory as at the start.")]
+    [SerializeField] float m_FireBurnRamp = 2f;
+
+    [Header("Opening (first 30 s)")]
+    [Tooltip("Place one slow Caminante, one Lanzahuesos and one Cazador as the night begins.")]
+    [SerializeField] bool m_SpawnOpeningWave = true;
+
+    [Header("First fire-out lesson (one time only)")]
+    [Tooltip("How long the campfire blinks and the gentle red-eyed horde lingers after the first fire-out.")]
+    [SerializeField] float m_FirstOutageCueDuration = 30f;
+    [Tooltip("How many very slow red-eyed Cazadores appear around the player the first time the fire dies.")]
+    [SerializeField] int m_FirstOutageHordeCount = 8;
+    [SerializeField] float m_FirstOutageHordeSpeed = 0.3f;
+    [SerializeField] float m_FirstOutageHordeDamage = 5f;
+    [Tooltip("Seconds between blinks of the campfire cue while it is out.")]
+    [SerializeField] float m_FirstOutageBlinkInterval = 0.3f;
+    [SerializeField] Color m_FirstOutageBlinkColor = new Color(1.4f, 0.5f, 0.12f);
 
     [Header("Defeat")]
     [SerializeField] float m_DefeatFadeDuration = 1.5f;
@@ -79,6 +106,7 @@ public class GameManager : MonoBehaviour
     bool m_FireOut;
     bool m_Started;
     bool m_BossPhaseActive;
+    bool m_FirstOutagePlayed;
 
     /// <summary>Survival progress toward victory, 0-1. Read by NightEnvironmentController,
     /// which brings the dawn in across the whole sky.</summary>
@@ -92,6 +120,10 @@ public class GameManager : MonoBehaviour
 
     void Awake()
     {
+        // A scene reload can keep statics alive when domain reload is disabled;
+        // never start the night already ramped up.
+        NightDifficulty.Reset();
+
         // Hold the night. Disabling the spawners in Awake rather than Start keeps
         // their own Start - and the first spawn timer - from running before the
         // player's first arrow lands.
@@ -164,10 +196,29 @@ public class GameManager : MonoBehaviour
 
         SetCampfireBurning(true);
         SetSpawnersRunning(true);
+
+        // Step 0 of the difficulty ramp and the gentle opening trio: one slow
+        // enemy of each kind, nothing else for the first 30 s (the spawners'
+        // start delays keep them from adding to it).
+        NightDifficulty.Reset();
+        UpdateDifficulty();
+        if (m_SpawnOpeningWave)
+        {
+            if (m_SkeletonSpawner != null)
+                m_SkeletonSpawner.SpawnNow();
+            if (m_BoneThrowerSpawner != null)
+                m_BoneThrowerSpawner.SpawnNow();
+            if (m_HunterSpawner != null)
+                m_HunterSpawner.SpawnNow();
+        }
     }
 
     void Update()
     {
+        // The difficulty is a function of the survival clock, so it is refreshed
+        // every frame (and held still while the clock is paused by the outage).
+        UpdateDifficulty();
+
         // The clock pauses while the fire is out (see HandleExtinguished): the
         // player cannot outlast the darkness, they have to relight the fire. It
         // also does not run at all until the night has been started.
@@ -176,6 +227,23 @@ public class GameManager : MonoBehaviour
         m_Elapsed += Time.deltaTime;
         if (m_Elapsed >= m_SurvivalDuration)
             Win();
+    }
+
+    /// <summary>
+    /// Feeds the night's escalating pressure to every enemy (through
+    /// <see cref="NightDifficulty"/>) and to the campfire's passive burn. The
+    /// enemy ramp steps once every <see cref="m_DifficultyStepSeconds"/> seconds
+    /// of survived night, so the opening is gentle and the last stretch bites.
+    /// </summary>
+    void UpdateDifficulty()
+    {
+        int step = m_DifficultyStepSeconds <= 0f ? 0 : Mathf.FloorToInt(m_Elapsed / m_DifficultyStepSeconds);
+        NightDifficulty.SpeedMultiplier = 1f + step * m_SpeedRampPerStep;
+        NightDifficulty.FireDamageMultiplier = 1f + step * m_FireDamageRampPerStep;
+        NightDifficulty.PlayerDamageMultiplier = 1f + step * m_PlayerDamageRampPerStep;
+
+        if (m_Campfire != null)
+            m_Campfire.SetBurnRateMultiplier(1f + m_FireBurnRamp * SurvivalNormalized);
     }
 
     /// <summary>Debug-only: jumps the survival clock (see DebugKeys).</summary>
@@ -224,7 +292,42 @@ public class GameManager : MonoBehaviour
             m_BoneThrowerSpawner.RetreatAll();
         }
 
+        // The first fire-out is a one-time lesson, not the normal crisis: the
+        // campfire blinks and a gentle red-eyed horde hangs back so the player
+        // learns to relight. Every later outage goes straight to the swarm.
+        if (!m_FirstOutagePlayed)
+        {
+            m_FirstOutagePlayed = true;
+            StartCoroutine(FirstOutageRoutine());
+        }
+        else if (m_HunterSpawner != null)
+        {
+            m_HunterSpawner.EnterSwarmMode();
+        }
+    }
+
+    /// <summary>
+    /// The first time the fire dies: fast-blinks the campfire and rings the
+    /// player with very slow, red-eyed Cazadores for
+    /// <see cref="m_FirstOutageCueDuration"/> seconds. They barely hurt, so the
+    /// lesson is "feed the fire", not "fight". If the player still has not
+    /// relit by the end, the normal swarm takes over.
+    /// </summary>
+    IEnumerator FirstOutageRoutine()
+    {
         if (m_HunterSpawner != null)
+            m_HunterSpawner.SpawnSpecialHorde(m_FirstOutageHordeCount, m_FirstOutageHordeSpeed, m_FirstOutageHordeDamage);
+
+        Vector3 anchor = (m_Campfire != null ? m_Campfire.transform.position : transform.position) + Vector3.up * 0.4f;
+
+        float end = Time.time + m_FirstOutageCueDuration;
+        while (m_FireOut && !m_GameOver && Time.time < end)
+        {
+            FadingGlow.Spawn(anchor, 0.9f, m_FirstOutageBlinkColor, m_FirstOutageBlinkInterval * 0.9f);
+            yield return new WaitForSeconds(m_FirstOutageBlinkInterval);
+        }
+
+        if (m_FireOut && !m_GameOver && m_HunterSpawner != null)
             m_HunterSpawner.EnterSwarmMode();
     }
 

@@ -18,15 +18,20 @@ public class CampfireFuel : MonoBehaviour
     [Header("Fuel (seconds)")]
     [SerializeField]
     [Tooltip("Maximum fuel the fire can hold, in seconds.")]
-    float m_MaxFuel = 90f;
+    float m_MaxFuel = 120f;
 
     [SerializeField]
     [Tooltip("Fuel the fire starts with, in seconds.")]
-    float m_StartingFuel = 55f;
+    float m_StartingFuel = 0f;
 
     [SerializeField]
     [Tooltip("Fuel consumed per second of real time. The fire can burn out completely.")]
-    float m_BurnRatePerSecond = 0.35f;
+    float m_BurnRatePerSecond = 0.3f;
+
+    [SerializeField]
+    [Tooltip("Multiplier on the passive burn, driven by GameManager so the fire gets " +
+        "thirstier as the night wears on. 1 is normal.")]
+    float m_BurnRateMultiplier = 1f;
 
     [SerializeField]
     [Tooltip("While off the fire holds its fuel level. Used through the prologue: " +
@@ -110,6 +115,7 @@ public class CampfireFuel : MonoBehaviour
     float m_DisplayFuel;
     float m_Flare;
     bool m_WasBurning;
+    bool m_FlamePlaying;
     AudioSource m_FireAudio;
     ParticleSystem m_ImpactParticles;
     int m_NextAlertIndex;
@@ -191,7 +197,7 @@ public class CampfireFuel : MonoBehaviour
         if (m_CurrentFuel <= 0f || !m_BurnsOverTime)
             return;
 
-        AddFuel(-m_BurnRatePerSecond * m_ProximityDrainMultiplier * Time.deltaTime, false);
+        AddFuel(-m_BurnRatePerSecond * m_ProximityDrainMultiplier * m_BurnRateMultiplier * Time.deltaTime, false);
     }
 
     /// <summary>
@@ -243,7 +249,17 @@ public class CampfireFuel : MonoBehaviour
 
         m_Flare = 1f;
         if (m_FlameParticles != null)
+        {
+            // A flare must land on a running flame; otherwise the burst can be
+            // emitted into a stopped system and cleared before it is ever seen.
+            if (!m_FlamePlaying)
+            {
+                m_FlameParticles.Play();
+                m_FlamePlaying = true;
+            }
+
             m_FlameParticles.Emit(30);
+        }
         ApplyVisuals();
     }
 
@@ -437,6 +453,15 @@ public class CampfireFuel : MonoBehaviour
     }
 
     /// <summary>
+    /// Scales the passive burn on top of the normal drain - GameManager ramps
+    /// this up across the night so a full fire lasts less and less. 1 is normal.
+    /// </summary>
+    public void SetBurnRateMultiplier(float multiplier)
+    {
+        m_BurnRateMultiplier = Mathf.Max(0f, multiplier);
+    }
+
+    /// <summary>
     /// Leans the flame away from a nearby threat (the Coronado) - a permanent
     /// compass: whichever way the flame tilts, that is where the danger is
     /// (see JEFE_FINAL.md 6). Recomputed fresh from the flame's own neutral
@@ -494,9 +519,14 @@ public class CampfireFuel : MonoBehaviour
         float n = m_MaxFuel <= 0f ? 0f : Mathf.Clamp01(m_DisplayFuel / m_MaxFuel);
         float curved = Mathf.Pow(n, m_LightCurveExponent);
 
+        // Whether the fire exists at all is the real fuel's call, not the ramped
+        // display value: the flame and the light must both come on the instant a
+        // log is added, while only their size swells over m_VisualRampSeconds.
+        bool burning = m_CurrentFuel > 0f;
+
         if (m_FireLight != null)
         {
-            m_FireLight.enabled = n > 0f;
+            m_FireLight.enabled = burning;
             m_FireLight.color = Color.Lerp(m_EmberColor, m_FlameColor, curved);
 
             // Cache the fuel-driven baseline; the flicker layers on top of it.
@@ -513,14 +543,20 @@ public class CampfireFuel : MonoBehaviour
             var main = m_FlameParticles.main;
             main.startSizeMultiplier = Mathf.Lerp(0.25f, m_MaxFlameSize, n);
 
-            if (n > 0.001f)
+            // Play/stop on the fuel's edge, never every frame: calling Play() again
+            // before a low-rate emitter has spawned its first particle resets its
+            // counters, so the flame could stay dark until the next fuel change (in
+            // the prologue, that only arrived with the night's drain).
+            if (burning && !m_FlamePlaying)
             {
-                if (!m_FlameParticles.isPlaying)
-                    m_FlameParticles.Play();
+                m_FlameParticles.Play();
+                m_FlamePlaying = true;
             }
-            else if (!m_FlameParticles.isStopped)
+            else if (!burning && m_FlamePlaying)
             {
-                m_FlameParticles.Stop();
+                // StopEmitting lets the last flames die down instead of snapping off.
+                m_FlameParticles.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+                m_FlamePlaying = false;
             }
         }
 

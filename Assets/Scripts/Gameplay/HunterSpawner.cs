@@ -17,9 +17,9 @@ public class HunterSpawner : MonoBehaviour
 
     [Header("Timing")]
     [Tooltip("Fraction of the night (0-1) that must pass before the first Cazador appears.")]
-    [SerializeField] float m_StartAtSurvival = 0.3f;
-    [SerializeField] float m_SpawnInterval = 22f;
-    [SerializeField] float m_MinInterval = 12f;
+    [SerializeField] float m_StartAtSurvival = 0.13f;
+    [SerializeField] float m_SpawnInterval = 25f;
+    [SerializeField] float m_MinInterval = 15f;
     [SerializeField] float m_IntervalRampPerSpawn = 0.8f;
 
     [Header("Placement")]
@@ -35,13 +35,13 @@ public class HunterSpawner : MonoBehaviour
 
     [Header("Fire outage (swarm)")]
     [Tooltip("Spawn interval while the campfire is out.")]
-    [SerializeField] float m_SwarmSpawnInterval = 1.6f;
+    [SerializeField] float m_SwarmSpawnInterval = 2.5f;
     [Tooltip("How many swarm hunters can be alive at once.")]
-    [SerializeField] int m_SwarmMaxAlive = 15;
+    [SerializeField] int m_SwarmMaxAlive = 6;
     [Tooltip("Swarm hunters walk faster than the normal Cazador.")]
-    [SerializeField] float m_SwarmMoveSpeed = 1.5f;
+    [SerializeField] float m_SwarmMoveSpeed = 1.2f;
     [Tooltip("Swarm hunters take more hits before they go down (also the number of axe strikes they survive).")]
-    [SerializeField] int m_SwarmHits = 2;
+    [SerializeField] int m_SwarmHits = 1;
     [Tooltip("Swarm hunters spawn closer to the player.")]
     [SerializeField] float m_SwarmSpawnDistance = 10f;
 
@@ -166,10 +166,52 @@ public class HunterSpawner : MonoBehaviour
         go.AddComponent<AutoDestroyAfter>().Lifetime = m_AppearSfx.length + 0.3f;
     }
 
-    /// <summary>Debug-only: force-spawns one Cazador now (see DebugKeys).</summary>
-    public void DebugSpawnNow()
+    /// <summary>
+    /// Force-spawns one Cazador now, gates bypassed. Used for the opening beat
+    /// and by DebugKeys.
+    /// </summary>
+    public void SpawnNow()
     {
         if (m_Player != null && m_Player.Head != null && m_HunterPrefab != null)
             Spawn();
+    }
+
+    /// <summary>
+    /// The one-time first-fire-out lesson: a slow, red-eyed ring of Cazadores
+    /// that hang back and claw gently, so the player reads "the fire is out,
+    /// feed it" instead of fighting for their life. They stay out of the night
+    /// ramp (see Skeleton.SetIgnoresDifficultyRamp) so they never speed up.
+    /// </summary>
+    public void SpawnSpecialHorde(int count, float moveSpeed, float playerDamage)
+    {
+        if (m_Player == null || m_Player.Head == null || m_HunterPrefab == null)
+            return;
+
+        for (int i = 0; i < count; i++)
+            SpawnSpecial(moveSpeed, playerDamage);
+    }
+
+    void SpawnSpecial(float moveSpeed, float playerDamage)
+    {
+        Vector3 head = m_Player.Head.position;
+        Vector3 forward = Vector3.ProjectOnPlane(m_Player.Head.forward, Vector3.up).normalized;
+        if (forward.sqrMagnitude < 0.01f)
+            forward = Vector3.forward;
+
+        Vector3 direction = Random.value < m_BehindChance ? -forward : forward;
+        direction = Quaternion.Euler(0f, Random.Range(-m_SpreadDegrees, m_SpreadDegrees), 0f) * direction;
+
+        Vector3 position = new Vector3(head.x, 0f, head.z) + direction * m_SwarmSpawnDistance;
+        var hunter = Instantiate(m_HunterPrefab, position, Quaternion.LookRotation(-direction, Vector3.up));
+
+        var skeleton = hunter.GetComponent<Skeleton>();
+        skeleton.SetPlayer(m_Player);
+        skeleton.SetMoveSpeed(moveSpeed);
+        skeleton.SetPlayerDamage(playerDamage);
+        skeleton.SetIgnoresDifficultyRamp(true);
+        skeleton.EnableRedEyes();
+        skeleton.OnDied.AddListener(() => m_Alive = Mathf.Max(0, m_Alive - 1));
+
+        m_Alive++;
     }
 }

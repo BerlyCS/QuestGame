@@ -21,7 +21,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 {
     [Header("Stats")]
     [SerializeField] int m_MaxHits = 1;
-    [SerializeField] float m_MoveSpeed = 0.8f;
+    [SerializeField] float m_MoveSpeed = 0.6f;
     [SerializeField] float m_TurnSpeed = 540f;
     [SerializeField] float m_StopDistance = 8f;
 
@@ -97,6 +97,12 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     /// <summary>True while the Lanzahuesos is walking off after the fire went out.</summary>
     public bool IsRetreating => m_Retreating;
 
+    /// <summary>Walk speed after the global night ramp, used for both movement and the locomotion blend.</summary>
+    float EffectiveMoveSpeed => m_MoveSpeed * NightDifficulty.SpeedMultiplier;
+
+    /// <summary>Throw damage after the global night ramp.</summary>
+    float EffectiveThrowDamage => m_ThrowFuelDamage * NightDifficulty.FireDamageMultiplier;
+
     /// <summary>Wired by BoneThrowerSpawner at spawn time; the only thing this enemy ever targets.</summary>
     public void SetCampfire(CampfireFuel campfire) => m_Campfire = campfire;
 
@@ -160,7 +166,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
 
         direction = ResolveWalkDirection(direction);
         FaceToward(direction);
-        transform.position += direction * (m_MoveSpeed * Time.deltaTime);
+        transform.position += direction * (EffectiveMoveSpeed * Time.deltaTime);
     }
 
     /// <summary>
@@ -174,7 +180,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
         if (!m_AvoidObstacles)
             return direction.normalized;
 
-        return EnemySteering.Resolve(transform, direction, m_MoveSpeed, m_AvoidSteer, ref m_Steering);
+        return EnemySteering.Resolve(transform, direction, EffectiveMoveSpeed, m_AvoidSteer, ref m_Steering);
     }
 
     void FaceToward(Vector3 direction)
@@ -193,7 +199,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
             // The controller blends Idle_A at 0, Walking_A at 0.5 and Running_A
             // at 1, so snap to a whole clip instead of sitting between two
             // cycles (blending two step timings together slid the feet).
-            m_Animator.SetFloat(k_SpeedHash, m_MoveSpeed >= m_RunSpeedThreshold ? 1f : 0.5f);
+            m_Animator.SetFloat(k_SpeedHash, EffectiveMoveSpeed >= m_RunSpeedThreshold ? 1f : 0.5f);
             return;
         }
 
@@ -237,7 +243,7 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
         var boneGo = Instantiate(m_BonePrefab, start, Quaternion.identity);
         var bone = boneGo.GetComponent<ThrownBone>();
         if (bone != null)
-            bone.Launch(start, targetPosition, m_ThrowDuration, m_ThrowArcHeight, m_Campfire, m_ThrowFuelDamage);
+            bone.Launch(start, targetPosition, m_ThrowDuration, m_ThrowArcHeight, m_Campfire, EffectiveThrowDamage);
     }
 
     public void TakeHit(int amount)

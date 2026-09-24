@@ -47,18 +47,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f17bad47f023e243bfe8033a101f9bc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Skeleton
-  m_MaxHits: 2
-  m_MoveSpeed: 0.8
+  m_MaxHits: 1
+  m_MoveSpeed: 0.6
   m_TurnSpeed: 540
   m_KneelDistance: 1.6
-  m_AttackInterval: 2.5
-  m_AttackFuelDrain: 1.5
+  m_AttackInterval: 3
+  m_AttackFuelDrain: 1
   m_HuntsPlayer: 0
-  m_HunterMoveSpeed: 0.4
-  m_PlayerAttackRange: 1
-  m_PlayerAttackInterval: 2
-  m_PlayerDamage: 8
-  m_RepelFuelThreshold: 0.75
+  m_HunterMoveSpeed: 0.45
+  m_PlayerAttackRange: 1.4
+  m_PlayerAttackInterval: 2.5
+  m_PlayerDamage: 10
+  m_RepelFuelThreshold: 0.65
   m_RepelDistance: 4.5
   m_RepelHysteresis: 1.2
   m_Campfire: {fileID: 0}

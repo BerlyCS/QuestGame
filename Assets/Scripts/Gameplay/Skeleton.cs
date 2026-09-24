@@ -23,24 +23,24 @@ using UnityEngine.Events;
 public class Skeleton : MonoBehaviour, IArrowHittable
 {
     [Header("Stats")]
-    [SerializeField] int m_MaxHits = 2;
-    [SerializeField] float m_MoveSpeed = 0.8f;
+    [SerializeField] int m_MaxHits = 1;
+    [SerializeField] float m_MoveSpeed = 0.6f;
     [SerializeField] float m_TurnSpeed = 540f;
 
     [Header("Attack")]
     [SerializeField] float m_KneelDistance = 1.6f;
-    [SerializeField] float m_AttackInterval = 2.5f;
-    [SerializeField] float m_AttackFuelDrain = 1.5f;
+    [SerializeField] float m_AttackInterval = 3f;
+    [SerializeField] float m_AttackFuelDrain = 1f;
 
     [Header("Hunter (attacks the player instead of the fire)")]
     [SerializeField] bool m_HuntsPlayer;
-    [SerializeField] float m_HunterMoveSpeed = 0.4f;
-    [SerializeField] float m_PlayerAttackRange = 1.0f;
-    [SerializeField] float m_PlayerAttackInterval = 2f;
-    [SerializeField] float m_PlayerDamage = 8f;
+    [SerializeField] float m_HunterMoveSpeed = 0.45f;
+    [SerializeField] float m_PlayerAttackRange = 1.4f;
+    [SerializeField] float m_PlayerAttackInterval = 2.5f;
+    [SerializeField] float m_PlayerDamage = 10f;
 
     [Header("Repelled by light")]
-    [SerializeField] float m_RepelFuelThreshold = 0.75f;
+    [SerializeField] float m_RepelFuelThreshold = 0.65f;
     [SerializeField] float m_RepelDistance = 4.5f;
     [Tooltip("Extra distance the light has to lose its hold on a skeleton, so one " +
              "hovering at the edge of the firelight does not flip between walking " +
@@ -121,6 +121,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     Vector3 m_RetreatDirection;
     float m_RetreatEndTime;
     EnemySteering.State m_Steering;
+    bool m_IgnoresDifficultyRamp;
+    bool m_RedEyes;
+
+    static Material s_RedEyeMaterial;
 
     public UnityEvent OnDied => m_OnDied;
     public bool IsAlive => m_Hits > 0;
@@ -130,6 +134,16 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     /// <summary>True while the skeleton is walking off after the fire went out.</summary>
     public bool IsRetreating => m_Retreating;
+
+    /// <summary>True while this skeleton is exempt from the global night ramp (the first fire-out horde).</summary>
+    public bool IgnoresDifficultyRamp => m_IgnoresDifficultyRamp;
+
+    float SpeedScale => m_IgnoresDifficultyRamp ? 1f : NightDifficulty.SpeedMultiplier;
+    float FireScale => m_IgnoresDifficultyRamp ? 1f : NightDifficulty.FireDamageMultiplier;
+    float PlayerScale => m_IgnoresDifficultyRamp ? 1f : NightDifficulty.PlayerDamageMultiplier;
+
+    /// <summary>Walk speed after the night ramp, used for both movement and the locomotion blend.</summary>
+    float EffectiveMoveSpeed => m_MoveSpeed * SpeedScale;
 
     /// <summary>Wired by SkeletonSpawner at spawn time; the only thing this enemy ever targets.</summary>
     public void SetCampfire(CampfireFuel campfire) => m_Campfire = campfire;
@@ -154,6 +168,57 @@ public class Skeleton : MonoBehaviour, IArrowHittable
 
     /// <summary>Makes the axe deal a normal hit instead of an instant kill (the fire-outage swarm).</summary>
     public void SetResistsBanish(bool value) => m_ResistsBanish = value;
+
+    /// <summary>Keeps this skeleton out of the global night ramp (the first fire-out horde stays slow and gentle).</summary>
+    public void SetIgnoresDifficultyRamp(bool value) => m_IgnoresDifficultyRamp = value;
+
+    /// <summary>Overrides the per-claw player damage, for special spawns.</summary>
+    public void SetPlayerDamage(float damage) => m_PlayerDamage = Mathf.Max(0f, damage);
+
+    /// <summary>
+    /// Gives the Cazador two small emissive red eyes so a special horde reads at
+    /// a glance in the dark. Built from a shared runtime material and Light-free,
+    /// matching the rest of the game's procedural cues; safe to call more than
+    /// once.
+    /// </summary>
+    public void EnableRedEyes()
+    {
+        if (m_RedEyes)
+            return;
+        m_RedEyes = true;
+
+        if (s_RedEyeMaterial == null)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            if (shader == null)
+                return;
+
+            s_RedEyeMaterial = new Material(shader) { name = "M_RedEyes (Runtime)" };
+            s_RedEyeMaterial.EnableKeyword("_EMISSION");
+            s_RedEyeMaterial.SetColor("_BaseColor", new Color(0.4f, 0f, 0f));
+            s_RedEyeMaterial.SetColor("_EmissionColor", new Color(3f, 0.03f, 0.03f));
+            s_RedEyeMaterial.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+        }
+
+        float scale = Mathf.Max(0.01f, transform.lossyScale.y);
+        CreateRedEye(new Vector3(0.085f, 1.55f, 0.12f) / scale, scale);
+        CreateRedEye(new Vector3(-0.085f, 1.55f, 0.12f) / scale, scale);
+    }
+
+    void CreateRedEye(Vector3 localPosition, float rootScale)
+    {
+        var eye = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        eye.name = "Red Eye";
+        Destroy(eye.GetComponent<Collider>());
+        eye.transform.SetParent(transform, false);
+        eye.transform.localPosition = localPosition;
+        eye.transform.localScale = Vector3.one * (0.06f / rootScale);
+
+        var renderer = eye.GetComponent<Renderer>();
+        renderer.sharedMaterial = s_RedEyeMaterial;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+    }
 
     /// <summary>
     /// Kills this skeleton as a real combat kill (death SFX + particles + OnDied).
@@ -218,7 +283,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
                 m_NextAttackTime = Time.time + m_AttackInterval;
                 // The fire takes the fuel loss and throws its own hit feedback
                 // (embers/ash burst + impact sound) so the blow reads on the fire.
-                m_Campfire.AddFuel(-m_AttackFuelDrain);
+                m_Campfire.AddFuel(-m_AttackFuelDrain * FireScale);
                 m_Campfire.PlayImpact();
                 if (m_Animator != null)
                     m_Animator.SetTrigger(k_AttackHash);
@@ -267,7 +332,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             if (Time.time >= m_NextAttackTime)
             {
                 m_NextAttackTime = Time.time + m_PlayerAttackInterval;
-                m_Player.TakeDamage(m_PlayerDamage, transform.position);
+                m_Player.TakeDamage(m_PlayerDamage * PlayerScale, transform.position);
                 if (m_Animator != null)
                     m_Animator.SetTrigger(k_AttackHash);
             }
@@ -311,7 +376,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         direction = ResolveWalkDirection(direction);
         Quaternion look = Quaternion.LookRotation(direction, Vector3.up);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, look, m_TurnSpeed * Time.deltaTime);
-        transform.position += direction * (m_MoveSpeed * Time.deltaTime);
+        transform.position += direction * (EffectiveMoveSpeed * Time.deltaTime);
     }
 
     /// <summary>
@@ -325,7 +390,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
         if (!m_AvoidObstacles)
             return direction.normalized;
 
-        return EnemySteering.Resolve(transform, direction, m_MoveSpeed, m_AvoidSteer, ref m_Steering);
+        return EnemySteering.Resolve(transform, direction, EffectiveMoveSpeed, m_AvoidSteer, ref m_Steering);
     }
 
     void AnimateWalk()
@@ -337,7 +402,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             // The controller blends Idle_A at 0, Walking_A at 0.5 and Running_A
             // at 1, so snap to a whole clip instead of sitting between two
             // cycles (blending two step timings together slid the feet).
-            m_Animator.SetFloat(k_SpeedHash, m_MoveSpeed >= m_RunSpeedThreshold ? 1f : 0.5f);
+            m_Animator.SetFloat(k_SpeedHash, EffectiveMoveSpeed >= m_RunSpeedThreshold ? 1f : 0.5f);
             return;
         }
 
