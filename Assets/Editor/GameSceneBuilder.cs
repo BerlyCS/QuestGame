@@ -1419,13 +1419,13 @@ public static class GameSceneBuilder
         // The dusk/afternoon settings live on the NightEnvironmentController; the
         // non-destructive Apply never recreates that component, so stamp the
         // values the prologue needs (an already-serialized older value would
-        // otherwise survive and leave the camp flat-lit).
+        // otherwise survive and leave the camp flat-lit). The afternoon holds
+        // until the fire is fed, then rushes over m_DuskRushDuration.
         var night = systems.GetComponent<NightEnvironmentController>();
         if (night != null)
         {
             var nightData = new SerializedObject(night);
             SetValue(nightData, "m_StartInAfternoon", true);
-            SetValue(nightData, "m_DuskDuration", 120f);
             SetValue(nightData, "m_DuskRushDuration", 5f);
             SetValue(nightData, "m_DayAmbientIntensity", 0.6f);
             nightData.ApplyModifiedPropertiesWithoutUndo();

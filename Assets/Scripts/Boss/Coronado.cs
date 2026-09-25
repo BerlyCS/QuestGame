@@ -24,12 +24,12 @@ using UnityEngine;
 ///   past the Fase 3 boundary and into Fase 2. Detected from raw hand-tracking
 ///   palm velocity (see <see cref="SampleHandVelocity"/>), never from the
 ///   Interaction SDK's grab events - a shove isn't a grab.
-/// - Si te alcanza a &lt;0.8 m (JEFE_FINAL.md 7.1): medio segundo de
-///   congelación y silencio total, luego se abalanza y llena el campo de
-///   visión en 0.2 s (nunca a menos de 0.3 m de la cámara, y esta rutina
-///   jamás mueve la cámara del jugador), grito + golpe seco, corte a negro.
-///   GameManager.LoseToCoronado() cubre el silencio final y el reinicio - sin
-///   "Has perdido", el susto es todo el mensaje.
+/// - Si te alcanza a &lt;0.8 m: medio segundo de congelación, luego se abalanza
+///   y llena el campo de visión en 0.2 s (nunca a menos de 0.3 m de la cámara,
+///   y esta rutina jamás mueve la cámara del jugador), grito + golpe seco. El
+///   golpe es no letal (PlayerHealth.TakeDamageNonLethal): duele muchísimo pero
+///   nunca es lo que termina la partida, y acto seguido sale despedido de
+///   vuelta a Fase 2. Ser alcanzado tiene que dar miedo, no reiniciar.
 ///
 /// NO health: the distance IS the health bar (see JEFE_FINAL.md 5). Every hit
 /// only pushes it away; nothing here ever reduces a hit-point counter.
@@ -62,6 +62,9 @@ public class Coronado : MonoBehaviour, IArrowHittable
     [SerializeField] float m_CazaDistance = 3f;
 
     [Header("Velocidad por fase (m/s)")]
+    [Tooltip("Multiplicador aplicado a las tres velocidades. Como solo se mueve cuando NO se le mira, " +
+             "es la velocidad real de persecución: subirlo acelera todo el combate sin romper la regla de la mirada.")]
+    [SerializeField] float m_UnseenSpeedMultiplier = 2f;
     [SerializeField] float m_AcechoSpeed = 0.6f;
     [SerializeField] float m_CercoSpeed = 1.2f;
     [SerializeField] float m_CazaSpeed = 2.0f;
@@ -118,9 +121,9 @@ public class Coronado : MonoBehaviour, IArrowHittable
     [SerializeField] float m_LaunchDuration = 0.25f;
     [SerializeField] float m_LaunchHopHeight = 0.6f;
 
-    [Header("Derrota: te alcanza (JEFE_FINAL.md 7.1) - NO NEGOCIABLE")]
+    [Header("Al alcanzarte: golpe no letal + empujón de vuelta")]
     [SerializeField] float m_CatchDistance = 0.8f;
-    [Tooltip("Medio segundo de congelación total antes del salto. Es lo que hace que el susto " +
+    [Tooltip("Medio segundo de congelación antes del zarpazo. Es lo que hace que el susto " +
              "funcione - no acortar esto.")]
     [SerializeField] float m_CatchFreezeDuration = 0.5f;
     [Tooltip("Cuánto tarda en \"llenar el campo de visión\" tras la congelación.")]
@@ -128,7 +131,10 @@ public class Coronado : MonoBehaviour, IArrowHittable
     [Tooltip("LÍMITE DE SEGURIDAD: nunca a menos de esta distancia de la cámara.")]
     [SerializeField] float m_CatchMinCameraDistance = 0.3f;
     [SerializeField] float m_CatchLungeScale = 1.6f;
-    [SerializeField] GameManager m_GameManager;
+    [Tooltip("Daño del zarpazo. No letal: PlayerHealth lo aplica pero nunca deja al jugador a 0.")]
+    [SerializeField] float m_CatchDamage = 90f;
+    [Tooltip("GameObject con PlayerHealth; si se deja vacío se busca en la escena.")]
+    [SerializeField] PlayerHealth m_PlayerHealth;
 
     [Header("Referencias")]
     [Tooltip("Cámara del jugador (CenterEyeAnchor). Si se deja vacío, usa Camera.main.")]
@@ -150,7 +156,6 @@ public class Coronado : MonoBehaviour, IArrowHittable
     Color[] m_BaseColors;
 
     bool m_Caught;
-    Renderer m_Blackout;
 
     /// <summary>True mientras el jugador lo tiene dentro del cono y nada lo tapa.</summary>
     public bool IsFrozen => m_Frozen;
@@ -164,6 +169,8 @@ public class Coronado : MonoBehaviour, IArrowHittable
             m_PlayerCamera = Camera.main.transform;
         if (m_Campfire == null)
             m_Campfire = Object.FindAnyObjectByType<CampfireFuel>();
+        if (m_PlayerHealth == null)
+            m_PlayerHealth = Object.FindAnyObjectByType<PlayerHealth>();
 
         m_OrbitDirection = Random.value < 0.5f ? 1f : -1f;
 
@@ -177,7 +184,6 @@ public class Coronado : MonoBehaviour, IArrowHittable
         }
 
         CacheRenderers();
-        BuildBlackout();
     }
 
     /// <summary>Para el destello blanco del empujón: guarda el color base de cada renderer (cuerpo y ojos).</summary>
@@ -189,43 +195,10 @@ public class Coronado : MonoBehaviour, IArrowHittable
             m_BaseColors[i] = m_Renderers[i].material.color;
     }
 
-    /// <summary>
-    /// El "Negro" de JEFE_FINAL.md 7.1: un quad opaco pegado a la cámara,
-    /// igual de cerca que la viñeta de daño de PlayerHealth (a esa distancia ya
-    /// cubre el campo de visión completo). Construido en runtime porque
-    /// depende de la cámara del jugador, no de la escena guardada.
-    /// </summary>
-    void BuildBlackout()
-    {
-        if (m_PlayerCamera == null)
-            return;
-
-        var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        quad.name = "Coronado Blackout";
-        Destroy(quad.GetComponent<Collider>());
-        quad.transform.SetParent(m_PlayerCamera, false);
-        quad.transform.localPosition = new Vector3(0f, 0f, 0.35f);
-        quad.transform.localRotation = Quaternion.identity;
-        quad.transform.localScale = new Vector3(1.6f, 1.6f, 1f);
-
-        var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Standard");
-        var material = new Material(shader) { name = "M_Coronado_Blackout (Runtime)" };
-        if (material.HasProperty("_BaseColor"))
-            material.SetColor("_BaseColor", Color.black);
-        if (material.HasProperty("_Color"))
-            material.SetColor("_Color", Color.black);
-
-        m_Blackout = quad.GetComponent<Renderer>();
-        m_Blackout.sharedMaterial = material;
-        m_Blackout.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        m_Blackout.receiveShadows = false;
-        m_Blackout.enabled = false;
-    }
-
     void Update()
     {
-        // Ya lo tiene. La secuencia de derrota manda a partir de aquí; no hay
-        // nada más que hacer (ni siquiera sampleaba manos: ya perdiste).
+        // Ya lo tiene. La secuencia del zarpazo manda a partir de aquí; no hay
+        // nada más que hacer hasta que el propio zarpazo lo devuelva a Fase 2.
         if (m_Caught)
             return;
 
@@ -286,7 +259,7 @@ public class Coronado : MonoBehaviour, IArrowHittable
         switch (phase)
         {
             case Phase.Acecho:
-                OrbitAndCloseIn(m_AcechoSpeed);
+                OrbitAndCloseIn(m_AcechoSpeed * m_UnseenSpeedMultiplier);
                 break;
 
             case Phase.Cerco:
@@ -294,11 +267,11 @@ public class Coronado : MonoBehaviour, IArrowHittable
                 if (m_UnseenTimer >= m_RepositionAfterUnseen)
                     Reposition();
                 else
-                    OrbitAndCloseIn(m_CercoSpeed);
+                    OrbitAndCloseIn(m_CercoSpeed * m_UnseenSpeedMultiplier);
                 break;
 
             case Phase.Caza:
-                AdvanceTowardPlayer(m_CazaSpeed);
+                AdvanceTowardPlayer(m_CazaSpeed * m_UnseenSpeedMultiplier);
                 break;
         }
     }
@@ -418,13 +391,14 @@ public class Coronado : MonoBehaviour, IArrowHittable
     }
 
     /// <summary>
-    /// JEFE_FINAL.md 7.1, palabra por palabra:
-    /// 1) medio segundo de congelación total y silencio - NO acortar esto, es
-    ///    lo que hace que el susto funcione;
+    /// Te alcanza (JEFE_FINAL.md 7.1, reconvertido en golpe en vez de derrota):
+    /// 1) medio segundo de congelación - el susto sigue;
     /// 2) se abalanza y llena el campo de visión en 0.2 s;
     /// 3) grito agudo + golpe seco;
-    /// 4) negro (un corte, no un fundido - el corte ES el susto);
-    /// 5) GameManager cubre los tres segundos de nada y el reinicio.
+    /// 4) el golpe entra por <see cref="PlayerHealth.TakeDamageNonLethal"/>:
+    ///    duele muchísimo pero nunca deja al jugador a cero;
+    /// 5) sale despedido de vuelta a Fase 2 con el mismo vuelo del manotazo, así
+    ///    que la partida continúa y hay que volver a ganarse la distancia.
     ///
     /// Límites de seguridad NO NEGOCIABLES: el modelo nunca queda a menos de
     /// <see cref="m_CatchMinCameraDistance"/> de la cámara, el salto entero
@@ -437,14 +411,16 @@ public class Coronado : MonoBehaviour, IArrowHittable
         m_Launching = true;
         m_Frozen = true;
 
-        float previousVolume = AudioListener.volume;
-        AudioListener.volume = 0f;
-
         yield return new WaitForSeconds(m_CatchFreezeDuration);
 
-        AudioListener.volume = previousVolume;
         ProceduralSfx.PlayAt(ProceduralSfx.CoronadoScream, Center); // grito agudo
         ProceduralSfx.PlayAt(ProceduralSfx.EnemyHit, Center); // golpe seco
+
+        if (m_PlayerHealth != null)
+        {
+            Vector3 source = m_PlayerCamera != null ? m_PlayerCamera.position : transform.position;
+            m_PlayerHealth.TakeDamageNonLethal(m_CatchDamage, source);
+        }
 
         Vector3 startPosition = transform.position;
         Vector3 startScale = transform.localScale;
@@ -466,14 +442,13 @@ public class Coronado : MonoBehaviour, IArrowHittable
         transform.position = targetPosition;
         transform.localScale = targetScale;
 
-        // Negro: un corte duro en el mismo fotograma, no un fundido.
-        if (m_Blackout != null)
-            m_Blackout.enabled = true;
-
-        AudioListener.volume = 0f;
-
-        if (m_GameManager != null)
-            m_GameManager.LoseToCoronado();
+        // De vuelta a Fase 2: el mismo vuelo exagerado del manotazo, así el
+        // zarpazo se lee como "te dio Y te lo quitaste de encima". Se rearma
+        // m_Caught para que la persecución siga.
+        transform.localScale = startScale;
+        m_Caught = false;
+        m_Launching = false;
+        StartCoroutine(LaunchBackRoutine(ComputePushedPosition(m_HandPushbackDistance)));
     }
 
     /// <summary>

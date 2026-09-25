@@ -45,15 +45,27 @@ public class GameManager : MonoBehaviour
     [SerializeField] float m_VictoryLitDuration = 10f;
 
     [Header("Night difficulty (steps every 30 s by default)")]
-    [Tooltip("Seconds per difficulty step. Every step the enemies walk faster, hit the fire and the player harder, " +
-        "and the spawners keep one more enemy of each kind alive at once.")]
+    [Tooltip("Seconds per difficulty step. Every step the spawners keep one more enemy of each kind alive " +
+        "at once and the enemies walk faster, but every blow against the fire and the player lands softer.")]
     [SerializeField] float m_DifficultyStepSeconds = 30f;
-    [Tooltip("Enemy walk-speed multiplier added per step (1 = no ramp).")]
+    [Tooltip("Enemy walk-speed multiplier added per step (negative = slower). The night only ever gets faster.")]
     [SerializeField] float m_SpeedRampPerStep = 0.15f;
-    [Tooltip("Multiplier added per step to how much enemy blows drain the campfire.")]
-    [SerializeField] float m_FireDamageRampPerStep = 0.3f;
-    [Tooltip("Multiplier added per step to how much a Cazador takes off the player.")]
-    [SerializeField] float m_PlayerDamageRampPerStep = 0.1f;
+    [Tooltip("How hard the opening enemies hit the campfire (step 0). High, so the first minutes teach " +
+        "that the fire is the thing that gets hurt.")]
+    [SerializeField] float m_FireDamageStart = 1.5f;
+    [Tooltip("Campfire-damage multiplier removed per step. Negative: each new wave of enemies is weaker " +
+        "against the fire than the last, even though there are more of them.")]
+    [SerializeField] float m_FireDamageRampPerStep = -0.12f;
+    [Tooltip("Lowest the campfire-damage multiplier can fall to.")]
+    [SerializeField] float m_FireDamageFloor = 0.6f;
+    [Tooltip("How hard a Cazador takes off the player at the start of the night. Kept low: the swarm is " +
+        "meant to be constant company, not a death sentence.")]
+    [SerializeField] float m_PlayerDamageStart = 0.6f;
+    [Tooltip("Player-damage multiplier removed per step. Negative: late, fast Cazadores claw often but " +
+        "barely scratch.")]
+    [SerializeField] float m_PlayerDamageRampPerStep = -0.05f;
+    [Tooltip("Lowest the Cazador player-damage multiplier can fall to.")]
+    [SerializeField] float m_PlayerDamageFloor = 0.2f;
     [Tooltip("Passive burn ramp across the whole night: 2 means the fire burns 3x as fast at victory as at the start.")]
     [SerializeField] float m_FireBurnRamp = 2f;
 
@@ -245,16 +257,23 @@ public class GameManager : MonoBehaviour
     /// <summary>
     /// Feeds the night's escalating pressure to every enemy (through
     /// <see cref="NightDifficulty"/>) and to the campfire's passive burn. The
-    /// enemy ramp steps once every <see cref="m_DifficultyStepSeconds"/> seconds
-    /// of survived night, so the opening is gentle and the last stretch bites.
+    /// ramp steps once every <see cref="m_DifficultyStepSeconds"/> seconds of
+    /// survived night: each step adds one more enemy of each kind, speeds the
+    /// enemies up and softens every blow. So the first enemies are slow but hit
+    /// the fire hard (urgency), while the late night is a fast, ever-present
+    /// swarm that claws often but barely punishes - pressure, not a slide to
+    /// defeat.
     /// </summary>
     void UpdateDifficulty()
     {
         int step = m_DifficultyStepSeconds <= 0f ? 0 : Mathf.FloorToInt(m_Elapsed / m_DifficultyStepSeconds);
         NightDifficulty.Stage = step;
         NightDifficulty.SpeedMultiplier = 1f + step * m_SpeedRampPerStep;
-        NightDifficulty.FireDamageMultiplier = 1f + step * m_FireDamageRampPerStep;
-        NightDifficulty.PlayerDamageMultiplier = 1f + step * m_PlayerDamageRampPerStep;
+
+        NightDifficulty.FireDamageMultiplier =
+            Mathf.Max(m_FireDamageFloor, m_FireDamageStart + step * m_FireDamageRampPerStep);
+        NightDifficulty.PlayerDamageMultiplier =
+            Mathf.Max(m_PlayerDamageFloor, m_PlayerDamageStart + step * m_PlayerDamageRampPerStep);
 
         if (m_Campfire != null)
             m_Campfire.SetBurnRateMultiplier(1f + m_FireBurnRamp * SurvivalNormalized);
@@ -268,15 +287,16 @@ public class GameManager : MonoBehaviour
 
     /// <summary>
     /// Called once by BossIntro when the Coronado's entrance begins (see
-    /// JEFE_FINAL.md 3). Stops the three spawners - the "WaveManager" - for
-    /// the rest of the night and, while active, keeps <see cref="HandleRelit"/>
-    /// from waking them back up if the player relights the fire mid-fight.
+    /// JEFE_FINAL.md 3). The normal enemies keep spawning through the whole boss
+    /// fight: the swarm is what keeps the player moving and under attack while
+    /// the Coronado takes the stage, so the second phase is a fight plus the
+    /// night's pressure, never a quiet duet. The flag is still published through
+    /// <see cref="BossPhaseActive"/> for anything that needs to tell the boss
+    /// phase apart from the rest of the night.
     /// </summary>
     public void SetBossPhaseActive(bool active)
     {
         m_BossPhaseActive = active;
-        if (active)
-            SetSpawnersRunning(false);
     }
 
     /// <summary>
@@ -365,11 +385,10 @@ public class GameManager : MonoBehaviour
             m_HunterSpawner.ExitSwarmMode();
         }
 
-        // The Coronado's entrance stops the spawners for good (see
-        // SetBossPhaseActive); relighting the fire during the boss phase must
-        // not wake them back up.
-        if (!m_BossPhaseActive)
-            SetSpawnersRunning(true);
+        // Relighting always wakes the spawners back up, boss phase included: the
+        // swarm is part of the boss fight now, so only the outage itself had put
+        // the normal enemies to sleep.
+        SetSpawnersRunning(true);
     }
 
     void HandlePlayerDied()

@@ -254,16 +254,15 @@ public static class BowPrefabBuilder
             }
         }
 
-        // The frame is held with the whole hand; the string is drawn with a
-        // pinch. Each interactable is restricted to a single gesture so the two
-        // do not fight: a pinch near the frame will not grab the bow, and a fist
-        // near the string will not grab the string instead of the frame. This
-        // also keeps a pinch on the string from anchoring to the palm pose.
+        // The frame is held with the whole hand; the string can be drawn either
+        // with a pinch or a whole-hand (fist) grab, so the draw is not limited to
+        // one gesture. Keeping the two volumes apart still stops a hand reaching
+        // for the string from grabbing the frame instead.
         HandGrabInteractable drawHandGrab = drawGrip.GetComponentInChildren<HandGrabInteractable>(true);
         foreach (HandGrabInteractable handGrab in root.GetComponentsInChildren<HandGrabInteractable>(true))
         {
             handGrab.InjectSupportedGrabTypes(handGrab == drawHandGrab
-                ? GrabTypeFlags.Pinch
+                ? GrabTypeFlags.Pinch | GrabTypeFlags.Palm
                 : GrabTypeFlags.Palm);
         }
 

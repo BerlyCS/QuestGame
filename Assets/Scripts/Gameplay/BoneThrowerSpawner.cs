@@ -4,7 +4,10 @@ using UnityEngine;
 /// Spawns Lanzahuesos on the same fixed ring as the Caminante (centred on the
 /// campfire, r = 10 m - see enemigos.md: "radios fijos, nada aleatorio"), but
 /// rarer and capped lower, since it exists to justify the resortera rather
-/// than to pressure the fire directly. Stays dormant until the player has fed
+/// than to pressure the fire directly. Like the Caminante there is no fixed
+/// budget: the alive cap grows one per <see cref="NightDifficulty.Stage"/> and
+/// a killed Lanzahuesos is replaced after <see cref="m_RefillDelay"/>, so the
+/// ranged threat persists all night. Stays dormant until the player has fed
 /// the campfire past <see cref="m_ActivationFuelNormalized"/>, same as
 /// SkeletonSpawner.
 /// </summary>
@@ -27,8 +30,14 @@ public class BoneThrowerSpawner : MonoBehaviour
     [SerializeField] float m_SpawnInterval = 30f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
+    [Tooltip("How many Lanzahuesos can be alive at once at the start of the night.")]
     [SerializeField] int m_MaxAlive = 1;
-    [SerializeField] int m_TotalToSpawn = 5;
+    [Tooltip("Extra Lanzahuesos allowed alive per difficulty stage (NightDifficulty.Stage).")]
+    [SerializeField] int m_MaxAlivePerStage = 1;
+    [Tooltip("Hard ceiling on living Lanzahuesos, however far the night has run.")]
+    [SerializeField] int m_MaxAliveCap = 3;
+    [Tooltip("Delay before a killed Lanzahuesos is replaced while below the per-stage cap.")]
+    [SerializeField] float m_RefillDelay = 4f;
 
     bool m_Activated;
     float m_NextSpawnTime;
@@ -60,7 +69,7 @@ public class BoneThrowerSpawner : MonoBehaviour
             return;
         }
 
-        if (m_Spawned >= m_TotalToSpawn || m_Alive >= m_MaxAlive)
+        if (m_Alive >= MaxAliveForStage)
             return;
         if (Time.time < m_NextSpawnTime)
             return;
@@ -68,6 +77,10 @@ public class BoneThrowerSpawner : MonoBehaviour
         Spawn();
         m_NextSpawnTime = Time.time + m_SpawnInterval;
     }
+
+    /// <summary>How many Lanzahuesos may be alive right now: the base cap plus one
+    /// per difficulty stage, never past <see cref="m_MaxAliveCap"/>.</summary>
+    int MaxAliveForStage => Mathf.Clamp(m_MaxAlive + NightDifficulty.Stage * m_MaxAlivePerStage, 0, m_MaxAliveCap);
 
     void Spawn()
     {
@@ -101,6 +114,10 @@ public class BoneThrowerSpawner : MonoBehaviour
     void OnBoneThrowerDied()
     {
         m_Alive = Mathf.Max(0, m_Alive - 1);
+
+        // A kill opens a slot: refill it soon so the ranged pressure does not
+        // stop just because the player shot the last thrower.
+        m_NextSpawnTime = Mathf.Min(m_NextSpawnTime, Time.time + m_RefillDelay);
     }
 
     /// <summary>

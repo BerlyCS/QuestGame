@@ -270,11 +270,11 @@ public class BoneThrower : MonoBehaviour, IArrowHittable
     {
         m_Hits = 0;
 
-        // With an Animator the model plays the death out, so the particle burst
-        // is skipped and the object is left in place long enough to be seen.
+        // The black particle burst plays alongside the animated death (or on its
+        // own), so every skeleton dissolves into dark smoke as it goes down.
         bool animated = m_Animator != null;
         SkeletonDeathFx.Play(transform.position + Vector3.up * 0.9f, m_DeathSfx, m_DeathSfxVolume,
-            m_DeathParticles && !animated);
+            m_DeathParticles);
         m_OnDied.Invoke();
 
         if (animated)

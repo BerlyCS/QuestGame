@@ -7,8 +7,9 @@ using UnityEngine;
 /// The wordless prologue that replaces the old "shoot the board to start" gate.
 ///
 /// The camp opens in late afternoon with a dead fire. The only cue is the log
-/// pile: every log glows on its own surface (see <see cref="EmissionPulse"/>),
-/// so the player is pulled to the natural first action - carry one log into the
+/// pile: every log gets a pulsing rim (see <see cref="EmissionPulse"/>'s
+/// outline mode), so the player is pulled to the natural first action without
+/// the log's shape washing out into a bright blob - carry one log into the
 /// fire - and nothing else blinks at the same time to overload them. The axe and
 /// the bow are held back (hidden, not cued) until the night so nothing competes
 /// with that beat. Picking a
@@ -17,8 +18,9 @@ using UnityEngine;
 /// actually fed, so the beat reads as a two-step tutorial. As soon as
 /// the fire is fed it swells back to life (see <see cref="CampfireFuel"/>'s
 /// visual ramp), the dusk rushes the rest of the way to night, and the moon
-/// opens red (see <see cref="NightEnvironmentController"/>); if the player never
-/// touches a log the two-minute dusk simply finishes on its own.
+/// opens red (see <see cref="NightEnvironmentController"/>). If the player never
+/// feeds the fire the camp dims to a dark dusk and waits there: the night never
+/// begins and the game never starts on its own.
 ///
 /// Only once the night has fallen do the axe, the bow and their cues appear -
 /// the axe as a surface highlight, the bow with its existing grip/string markers
@@ -99,9 +101,11 @@ public class PrologueController : MonoBehaviour
     {
         if (!m_CuesOver)
         {
-            // No fuel? The two-minute dusk finishing is the fallback that still
-            // opens the night (and a scene that starts at night skips the cue).
-            if (m_Night == null || !m_Night.StartedInAfternoon || m_Night.DuskComplete)
+            // A scene that opens at night (or without a night controller) has no
+            // prologue beat to wait for. Otherwise the cues - and the night -
+            // wait for the player to actually feed the fire (HandleFuelChanged):
+            // the world must never fall to night on its own.
+            if (m_Night == null || !m_Night.StartedInAfternoon)
                 EndCues();
             return;
         }
@@ -145,9 +149,9 @@ public class PrologueController : MonoBehaviour
     }
 
     /// <summary>
-    /// The learn-to-play beat is over: the fire has been fed (or the dusk simply
-    /// ran out). Clears the log cue and rushes what is left of the dusk; the
-    /// night only arrives once the sky has actually reached night.
+    /// The learn-to-play beat is over: the fire has been fed. Clears the log cue
+    /// and rushes what is left of the dusk; the night only arrives once the sky
+    /// has actually reached night.
     /// </summary>
     void EndCues()
     {
@@ -264,6 +268,11 @@ public class PrologueController : MonoBehaviour
             var pulse = log.GetComponent<EmissionPulse>();
             if (pulse == null)
                 pulse = log.gameObject.AddComponent<EmissionPulse>();
+
+            // Logs cue as a rim only. Filling the whole log with emission blows
+            // its dark shape out into a bright blob, so the player cannot even
+            // tell what the glowing thing is.
+            pulse.SetOutline(true);
             pulse.SetActive(active);
 
             // Taking a log raises the campfire's drop-off cue (HandleLogGrabbed).

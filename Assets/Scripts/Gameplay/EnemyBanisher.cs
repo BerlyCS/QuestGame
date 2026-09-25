@@ -31,6 +31,11 @@ public class EnemyBanisher : MonoBehaviour
     [SerializeField] float m_BanishHapticAmplitude = 0.55f;
     [SerializeField] float m_BanishHapticDuration = 0.09f;
 
+    [Header("Impact Sound")]
+    [Tooltip("Axe impact cue, loaded from Resources/Axe/hach_golpe so the prefab " +
+        "needs no clip wired by hand.")]
+    [SerializeField, Range(0f, 1f)] float m_HitSfxVolume = 0.9f;
+
     [Header("Thrown")]
     [Tooltip("Hits a thrown weapon deals to an enemy that has no banish phase " +
              "(a Lanzahuesos), so it goes down whatever its hit count.")]
@@ -56,6 +61,9 @@ public class EnemyBanisher : MonoBehaviour
     float m_RestTimer;
     Vector3 m_LastBladePosition;
     Phase m_Phase = Phase.Idle;
+
+    static AudioClip s_HitSfx;
+    static bool s_HitSfxSearched;
 
     enum Phase
     {
@@ -186,8 +194,13 @@ public class EnemyBanisher : MonoBehaviour
         m_Struck.Clear();
         m_Struck.UnionWith(m_StruckThisFrame);
 
-        if (struck && InteractorHaptics.TryGetHoldingController(gameObject, out var controller))
-            HapticsUtility.Pulse(controller, m_BanishHapticAmplitude, m_BanishHapticDuration);
+        if (struck)
+        {
+            PlayHitSfx();
+
+            if (InteractorHaptics.TryGetHoldingController(gameObject, out var controller))
+                HapticsUtility.Pulse(controller, m_BanishHapticAmplitude, m_BanishHapticDuration);
+        }
     }
 
     /// <summary>
@@ -206,8 +219,12 @@ public class EnemyBanisher : MonoBehaviour
             : Physics.OverlapSphereNonAlloc(
                 blade, m_Radius, m_Overlaps, m_EnemyLayers, QueryTriggerInteraction.Ignore);
 
+        bool struck = false;
         for (int i = 0; i < count; i++)
-            Strike(m_Overlaps[i]);
+            struck |= Strike(m_Overlaps[i]);
+
+        if (struck)
+            PlayHitSfx();
     }
 
     /// <summary>
@@ -217,8 +234,8 @@ public class EnemyBanisher : MonoBehaviour
     /// </summary>
     void OnCollisionEnter(Collision collision)
     {
-        if (m_Thrown)
-            Strike(collision.collider);
+        if (m_Thrown && Strike(collision.collider))
+            PlayHitSfx();
     }
 
     bool Strike(Collider other)
@@ -244,6 +261,20 @@ public class EnemyBanisher : MonoBehaviour
         }
 
         return false;
+    }
+
+    /// <summary>Plays the axe impact cue at the blade (loaded from Resources so
+    /// no prefab wiring is needed).</summary>
+    void PlayHitSfx()
+    {
+        if (!s_HitSfxSearched)
+        {
+            s_HitSfxSearched = true;
+            s_HitSfx = Resources.Load<AudioClip>("Axe/hach_golpe");
+        }
+
+        if (s_HitSfx != null)
+            ProceduralSfx.PlayAt(s_HitSfx, transform.position, m_HitSfxVolume, Random.Range(0.95f, 1.05f));
     }
 
     bool IsHeldNow()

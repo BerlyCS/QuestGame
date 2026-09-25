@@ -15,6 +15,11 @@ public class PlayerHealth : MonoBehaviour
 {
     [SerializeField] float m_MaxHealth = 150f;
 
+    [Tooltip("Lowest life a non-lethal blow (the Coronado's catch) may leave the player at. " +
+        "That hit hurts badly but can never be the one that ends the run: only Cazadores and " +
+        "other lethal blows trigger the red flood.")]
+    [SerializeField] float m_NonLethalHealthFloor = 15f;
+
     [Header("Pain")]
     [Tooltip("Random grunt played when an enemy lands a hit. Falls back to the clips under Resources/Pain when empty.")]
     [SerializeField] AudioClip[] m_PainSfx;
@@ -31,6 +36,8 @@ public class PlayerHealth : MonoBehaviour
     [SerializeField] Material m_VignetteMaterial;
 
     [Header("Death")]
+    [Tooltip("Player death cry played as the screen floods red. Falls back to the clip under Resources/Death when empty; GameManager's sinister laugh still plays on top of it.")]
+    [SerializeField] AudioClip m_DeathSfx;
     [Tooltip("Seconds the whole screen takes to fade to opaque red once life runs out.")]
     [SerializeField] float m_DeathFadeDuration = 1.4f;
     [Tooltip("Colour the screen floods with on death.")]
@@ -47,6 +54,7 @@ public class PlayerHealth : MonoBehaviour
     Renderer m_DeathOverlay;
     bool m_DeathStarted;
     AudioClip[] m_PainClips;
+    AudioClip m_DeathClip;
     AudioSource m_PainSource;
 
     public UnityEvent OnDied => m_OnDied;
@@ -66,6 +74,18 @@ public class PlayerHealth : MonoBehaviour
         m_PainClips = m_PainSfx != null && m_PainSfx.Length > 0
             ? m_PainSfx
             : Resources.LoadAll<AudioClip>("Pain");
+
+        // The death cry is loaded from Resources too so it needs no scene wiring.
+        if (m_DeathSfx != null)
+        {
+            m_DeathClip = m_DeathSfx;
+        }
+        else
+        {
+            AudioClip[] deathClips = Resources.LoadAll<AudioClip>("Death");
+            m_DeathClip = deathClips != null && deathClips.Length > 0 ? deathClips[0] : null;
+        }
+
         m_PainSource = gameObject.AddComponent<AudioSource>();
         m_PainSource.playOnAwake = false;
         m_PainSource.spatialBlend = 0f;
@@ -199,17 +219,39 @@ public class PlayerHealth : MonoBehaviour
         if (!IsAlive)
             return;
 
-        m_Health = Mathf.Max(0f, m_Health - amount);
-        m_HurtPulse = 1f;
-        m_LastDamageTime = Time.time;
-        PlayPain();
-        SpawnHitBurst(BurstPosition(sourcePosition));
+        ApplyHit(amount, sourcePosition);
 
         if (m_Health <= 0f)
         {
             BeginDeath();
             m_OnDied.Invoke();
         }
+    }
+
+    /// <summary>
+    /// A blow that hurts badly but can never be the one that ends the run: it
+    /// lands exactly like any other hit (pain grunt, red flinch, hit spray) but
+    /// the resulting life is floored above zero, so <see cref="OnDied"/> never
+    /// fires from it. The Coronado's catch uses this so being reached is a
+    /// brutal hit, not an instant loss.
+    /// </summary>
+    public void TakeDamageNonLethal(float amount, Vector3 sourcePosition)
+    {
+        if (!IsAlive)
+            return;
+
+        ApplyHit(amount, sourcePosition);
+        m_Health = Mathf.Max(m_NonLethalHealthFloor, m_Health);
+    }
+
+    /// <summary>Shared damage feedback for both the lethal and non-lethal paths.</summary>
+    void ApplyHit(float amount, Vector3 sourcePosition)
+    {
+        m_Health = Mathf.Max(0f, m_Health - amount);
+        m_HurtPulse = 1f;
+        m_LastDamageTime = Time.time;
+        PlayPain();
+        SpawnHitBurst(BurstPosition(sourcePosition));
     }
 
     /// <summary>Where the hit spray appears: on the player, pulled toward the blow.</summary>
@@ -231,6 +273,11 @@ public class PlayerHealth : MonoBehaviour
         if (m_DeathStarted)
             return;
         m_DeathStarted = true;
+
+        // The death cry plays even if the red overlay could not be built, so
+        // the one cue that matters most is never missing. GameManager's laugh
+        // fires alongside it through OnDied.
+        PlayDeathCry();
 
         if (m_DeathOverlay == null || m_DeathInstance == null)
             return;
@@ -319,6 +366,15 @@ public class PlayerHealth : MonoBehaviour
         AudioClip clip = m_PainClips[Random.Range(0, m_PainClips.Length)];
         if (clip != null)
             m_PainSource.PlayOneShot(clip);
+    }
+
+    /// <summary>The player's final cry, played on top of GameManager's sinister laugh.</summary>
+    void PlayDeathCry()
+    {
+        if (m_PainSource == null || m_DeathClip == null)
+            return;
+
+        m_PainSource.PlayOneShot(m_DeathClip);
     }
 
     void OnDestroy()

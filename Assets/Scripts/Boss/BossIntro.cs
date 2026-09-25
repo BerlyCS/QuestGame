@@ -14,9 +14,10 @@ using UnityEngine;
 /// fixed 15 m boss ring, centred on the campfire like every other enemy ring
 /// (see CLAUDE.md).
 ///
-/// GameManager.SetBossPhaseActive(true) is what actually stops the spawners -
-/// the "WaveManager" - for the rest of the night, including guarding against a
-/// mid-fight relight resuming them.
+/// GameManager.SetBossPhaseActive(true) marks the start of the second phase.
+/// It does not stop the normal spawners: the swarm keeps coming through the
+/// boss fight (see GameManager.SetBossPhaseActive), so clearing the field for
+/// the entrance is a beat, not a ceasefire.
 /// </summary>
 [DisallowMultipleComponent]
 public class BossIntro : MonoBehaviour
@@ -73,7 +74,7 @@ public class BossIntro : MonoBehaviour
         if (m_GameManager != null)
             m_GameManager.SetBossPhaseActive(true);
 
-        yield return FadeFireAudio(1f, 0f, m_AudioFadeDuration);
+        yield return FadeAmbientAudio(1f, 0f, m_AudioFadeDuration);
         yield return new WaitForSeconds(m_SilenceDuration);
 
         if (m_Coronado != null && m_Campfire != null)
@@ -99,7 +100,11 @@ public class BossIntro : MonoBehaviour
         }
     }
 
-    IEnumerator FadeFireAudio(float from, float to, float duration)
+    /// <summary>
+    /// Fades the whole ambient bed - the fire's crackle and the forest loop
+    /// (see GameManager.SetAmbienceDuck) - down to <paramref name="to"/>.
+    /// </summary>
+    IEnumerator FadeAmbientAudio(float from, float to, float duration)
     {
         if (m_Campfire == null)
             yield break;
@@ -107,6 +112,8 @@ public class BossIntro : MonoBehaviour
         if (duration <= 0f)
         {
             m_Campfire.SetAudioDuckMultiplier(to);
+            if (m_GameManager != null)
+                m_GameManager.SetAmbienceDuck(to);
             yield break;
         }
 
@@ -114,10 +121,15 @@ public class BossIntro : MonoBehaviour
         while (t < duration)
         {
             t += Time.deltaTime;
-            m_Campfire.SetAudioDuckMultiplier(Mathf.Lerp(from, to, t / duration));
+            float value = Mathf.Lerp(from, to, t / duration);
+            m_Campfire.SetAudioDuckMultiplier(value);
+            if (m_GameManager != null)
+                m_GameManager.SetAmbienceDuck(value);
             yield return null;
         }
 
         m_Campfire.SetAudioDuckMultiplier(to);
+        if (m_GameManager != null)
+            m_GameManager.SetAmbienceDuck(to);
     }
 }

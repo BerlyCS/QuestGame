@@ -7,9 +7,12 @@ using UnityEngine.Rendering;
 /// fire dies (the fire is the main light source; the moon only gives a faint
 /// cold rim). The prologue opens in late afternoon - a warm directional sun
 /// under an orange-to-purple sky dome (the same dome the dawn reuses) - and the
-/// dusk bleeds that into night over <see cref="m_DuskDuration"/>, hurried to
-/// <see cref="m_DuskRushDuration"/> once the fire is fed; the blood moon then
-/// opens the night. And the survival clock (GameManager.SurvivalNormalized) slowly
+/// dusk creeps to a dark-but-not-night level on its own over
+/// <see cref="m_WaitDuskDuration"/> and waits there: waiting must never reach
+/// night, or the game would begin without the campfire ever being lit. Only once
+/// the player feeds the fire does the dusk rush the rest of the way to night
+/// over <see cref="m_DuskRushDuration"/>, and the blood moon opens it.
+/// And the survival clock (GameManager.SurvivalNormalized) slowly
 /// brings the dawn in across the whole 360 degrees: the night sky warms up,
 /// the moon fills out from a dark disc to a full one, a low-poly sun climbs
 /// into the sky, ambient light and fog brighten together and a chorus of
@@ -102,10 +105,15 @@ public class NightEnvironmentController : MonoBehaviour
     [SerializeField] float m_MoonHideAt = 0.9f;
 
     [Header("Prologue dusk (afternoon -> night)")]
-    [Tooltip("When on, the world opens in late afternoon and darkens over Dusk Duration; off starts at night.")]
+    [Tooltip("When on, the world opens in late afternoon and dims to the waiting dusk until the fire is fed; off starts at night.")]
     [SerializeField] bool m_StartInAfternoon = true;
-    [Tooltip("Seconds the afternoon takes to bleed into night on its own.")]
-    [SerializeField] float m_DuskDuration = 120f;
+    [Tooltip("How far the afternoon dims on its own while the fire is still dead (0-1). " +
+        "The world creeps to this dark-but-not-night level and waits there, so time " +
+        "visibly passes without the night ever starting; it is kept just below 1 so " +
+        "waiting alone can never begin the game.")]
+    [Range(0f, 0.98f)] [SerializeField] float m_WaitDuskLevel = 0.55f;
+    [Tooltip("Seconds the afternoon takes to creep to the waiting dusk level on its own.")]
+    [SerializeField] float m_WaitDuskDuration = 120f;
     [Tooltip("Seconds the dusk takes to finish once the prologue rushes it (the first log in the fire).")]
     [SerializeField] float m_DuskRushDuration = 5f;
     [SerializeField] Color m_DayAmbient = new Color(0.62f, 0.58f, 0.5f);
@@ -232,8 +240,8 @@ public class NightEnvironmentController : MonoBehaviour
     /// <summary>
     /// Starts the blood-moon opening: bright red in a few seconds, then a long
     /// 1/x whitening across the night. Idempotent, and fired automatically the
-    /// moment the dusk finishes (so the moon still opens the night for a player
-    /// who never feeds the fire).
+    /// moment the rushed dusk finishes (which only happens once the player has
+    /// fed the fire).
     /// </summary>
     public void TriggerBloodMoon()
     {
@@ -268,18 +276,16 @@ public class NightEnvironmentController : MonoBehaviour
 
     void Update()
     {
-        // Afternoon -> night: slow on its own, fast once the prologue rushes it.
+        // Left alone, the afternoon creeps toward the waiting dusk and holds
+        // there. That level is deliberately below 1, so waiting can never reach
+        // night and start the game with a dead fire. BeginDuskRush - the first log
+        // in the fire - is what carries the dusk the rest of the way.
         if (m_DuskRushing)
-        {
             m_Dusk = Mathf.MoveTowards(m_Dusk, 1f, Time.deltaTime / Mathf.Max(0.05f, m_DuskRushDuration));
-        }
-        else if (m_StartInAfternoon && m_Dusk < 1f)
-        {
-            m_Dusk = Mathf.MoveTowards(m_Dusk, 1f, Time.deltaTime / Mathf.Max(0.05f, m_DuskDuration));
-        }
+        else if (m_StartInAfternoon && m_Dusk < m_WaitDuskLevel)
+            m_Dusk = Mathf.MoveTowards(m_Dusk, Mathf.Min(m_WaitDuskLevel, 0.98f), Time.deltaTime / Mathf.Max(0.05f, m_WaitDuskDuration));
 
-        // The moon opens the night the moment dusk finishes, whether the player
-        // rushed it with a log or simply let the two minutes run out.
+        // The moon opens the night the moment the rushed dusk finishes.
         if (m_StartInAfternoon && m_Dusk >= 1f)
             TriggerBloodMoon();
 

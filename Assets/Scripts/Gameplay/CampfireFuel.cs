@@ -85,6 +85,9 @@ public class CampfireFuel : MonoBehaviour
     [SerializeField] float m_MinFirePitch = 0.6f;
     [SerializeField] float m_MaxFirePitch = 1.25f;
 
+    [Tooltip("One-shot played the instant the fire dies (Resources/Fire/extingued_fire).")]
+    [SerializeField, Range(0f, 1f)] float m_ExtinguishVolume = 1f;
+
     [Header("Damage Feedback")]
     [Tooltip("Small debris/burn particles thrown off when an enemy lands a hit on the fire.")]
     [SerializeField] int m_ImpactParticleCount = 16;
@@ -121,6 +124,8 @@ public class CampfireFuel : MonoBehaviour
     int m_NextAlertIndex;
     static Material s_ParticleMaterial;
     static bool s_ParticleMaterialSearched;
+    static AudioClip s_LowFuelSfx;
+    static AudioClip s_ExtinguishSfx;
 
     // Fuel-driven light values, cached by ApplyVisuals so the per-frame flicker
     // can modulate them without re-deriving the fuel curve every frame.
@@ -233,7 +238,10 @@ public class CampfireFuel : MonoBehaviour
         if (burning && !m_WasBurning)
             m_OnIgnited.Invoke();
         else if (!burning && m_WasBurning)
+        {
+            PlayExtinguishSfx();
             m_OnExtinguished.Invoke();
+        }
 
         m_WasBurning = burning;
     }
@@ -314,7 +322,24 @@ public class CampfireFuel : MonoBehaviour
             m_NextAlertIndex++;
 
         EmitBurst(m_AlertParticleCount, 0.6f);
-        ProceduralSfx.PlayAt(ProceduralSfx.FireLowFuel, transform.position + Vector3.up * 0.4f, m_AlertVolume);
+
+        // Prefer the recorded low-fire warning (Resources/Fire/fogata_baja) and
+        // fall back to the synthesized cue if it is missing.
+        AudioClip cue = s_LowFuelSfx ??= Resources.Load<AudioClip>("Fire/fogata_baja");
+        ProceduralSfx.PlayAt(cue != null ? cue : ProceduralSfx.FireLowFuel,
+            transform.position + Vector3.up * 0.4f, m_AlertVolume);
+    }
+
+    /// <summary>
+    /// One-shot played the moment the fuel hits zero: the recorded death cue
+    /// (Resources/Fire/extingued_fire) marks the fire going out as clearly as
+    /// the light and flame sagging. Silent if the clip is missing.
+    /// </summary>
+    void PlayExtinguishSfx()
+    {
+        AudioClip cue = s_ExtinguishSfx ??= Resources.Load<AudioClip>("Fire/extingued_fire");
+        if (cue != null)
+            ProceduralSfx.PlayAt(cue, transform.position + Vector3.up * 0.4f, m_ExtinguishVolume);
     }
 
     /// <summary>Rearms the low-fuel cues for the current fuel level.</summary>

@@ -3,8 +3,12 @@ using UnityEngine;
 /// <summary>
 /// Spawns skeletons on a fixed ring centred on the campfire (not the player's
 /// head), biased toward appearing in front of or behind wherever the player is
-/// looking, in waves that get slightly faster over time. Keeps a cap on how
-/// many are alive at once. Stays dormant until the player has fed the campfire past
+/// looking, in waves that get slightly faster over time. There is no fixed
+/// budget: the cap on how many are alive at once grows one per
+/// <see cref="NightDifficulty.Stage"/>, and a killed Caminante is replaced
+/// after <see cref="m_RefillDelay"/>, so clearing the field never leaves the
+/// night empty - it just opens slots for the stage's reinforcements. Stays
+/// dormant until the player has fed the campfire past
 /// <see cref="m_ActivationFuelNormalized"/>, so the opening moments are quiet
 /// and the waves start as a consequence of building up the fire rather than
 /// on a fixed timer from scene load.
@@ -28,8 +32,14 @@ public class SkeletonSpawner : MonoBehaviour
     [SerializeField] float m_SpawnInterval = 20f;
     [SerializeField] float m_SpawnDistance = 10f;
     [SerializeField] float m_SpawnSpreadDegrees = 40f;
+    [Tooltip("How many Caminantes can be alive at once at the start of the night.")]
     [SerializeField] int m_MaxAlive = 3;
-    [SerializeField] int m_TotalToSpawn = 10;
+    [Tooltip("Extra Caminantes allowed alive per difficulty stage (NightDifficulty.Stage).")]
+    [SerializeField] int m_MaxAlivePerStage = 1;
+    [Tooltip("Hard ceiling on living Caminantes, however far the night has run.")]
+    [SerializeField] int m_MaxAliveCap = 8;
+    [Tooltip("Delay before a killed Caminante is replaced while below the per-stage cap.")]
+    [SerializeField] float m_RefillDelay = 3f;
 
     [Header("Difficulty")]
     [SerializeField] float m_MinInterval = 9f;
@@ -65,7 +75,7 @@ public class SkeletonSpawner : MonoBehaviour
             return;
         }
 
-        if (m_Spawned >= m_TotalToSpawn || m_Alive >= m_MaxAlive)
+        if (m_Alive >= MaxAliveForStage)
             return;
         if (Time.time < m_NextSpawnTime)
             return;
@@ -75,6 +85,10 @@ public class SkeletonSpawner : MonoBehaviour
         float interval = Mathf.Max(m_MinInterval, m_SpawnInterval - m_Spawned * m_IntervalRampPerSpawn);
         m_NextSpawnTime = Time.time + interval;
     }
+
+    /// <summary>How many Caminantes may be alive right now: the base cap plus one
+    /// per difficulty stage, never past <see cref="m_MaxAliveCap"/>.</summary>
+    int MaxAliveForStage => Mathf.Clamp(m_MaxAlive + NightDifficulty.Stage * m_MaxAlivePerStage, 0, m_MaxAliveCap);
 
     void Spawn()
     {
@@ -110,6 +124,11 @@ public class SkeletonSpawner : MonoBehaviour
     void OnSkeletonDied()
     {
         m_Alive = Mathf.Max(0, m_Alive - 1);
+
+        // A kill opens a slot. Line up a replacement soon rather than waiting
+        // out the whole wave interval, so the field refills during the stage
+        // instead of going quiet once the player clears it.
+        m_NextSpawnTime = Mathf.Min(m_NextSpawnTime, Time.time + m_RefillDelay);
     }
 
     /// <summary>

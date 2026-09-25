@@ -12,15 +12,25 @@ public static class HaloShells
     public const string ShellName = "Grab Glow Shell";
 
     public static Renderer[] Build(Transform root, Material material, float thickness)
+        => Build(root, material, thickness, ShellName);
+
+    /// <summary>
+    /// Same as <see cref="Build(Transform, Material, float)"/>, but tags the
+    /// shells with a caller-supplied name so different cues (the grab halo, the
+    /// outline cue in <see cref="EmissionPulse"/>) can coexist without one
+    /// building a shell around the other. Every "*Shell" child is skipped.
+    /// </summary>
+    public static Renderer[] Build(Transform root, Material material, float thickness, string shellName)
     {
         var shells = new List<Renderer>();
 
         foreach (var filter in root.GetComponentsInChildren<MeshFilter>())
         {
-            if (filter.sharedMesh == null || filter.GetComponent<Renderer>() == null || filter.name == ShellName)
+            if (filter.sharedMesh == null || filter.GetComponent<Renderer>() == null ||
+                filter.name.EndsWith("Shell", System.StringComparison.Ordinal))
                 continue;
 
-            var shell = new GameObject(ShellName);
+            var shell = new GameObject(shellName);
             shell.transform.SetParent(filter.transform, false);
 
             Vector3 lossy = filter.transform.lossyScale;
