@@ -9,7 +9,7 @@ public static class ProceduralSfx
 {
     const int k_SampleRate = 44100;
 
-    static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh, s_TreasureLand, s_CoronadoScream, s_CoronadoBreath;
+    static AudioClip s_WoodGrab, s_FireWhoosh, s_EnemyHit, s_BirdSong, s_SinisterLaugh, s_TreasureLand, s_CoronadoScream, s_CoronadoBreath, s_SunBurn, s_BoneRattle;
     static AudioClip s_FireImpact, s_FireLowFuel, s_SkeletonStep, s_SkeletonHit;
 
     /// <summary>Dull wooden knock: the log settling into the hand.</summary>
@@ -59,6 +59,32 @@ public static class ProceduralSfx
     /// on a 3D AudioSource so the player can turn toward it by ear alone.
     /// </summary>
     public static AudioClip CoronadoBreath => s_CoronadoBreath ??= BuildCoronadoBreath();
+
+    /// <summary>
+    /// A hidden skeleton giving itself away (see EnemyTell): a quick burst of
+    /// hollow bone clacks, like a jaw chattering in the trees (~0.6 s).
+    /// </summary>
+    public static AudioClip BoneRattle => s_BoneRattle ??= Build("BoneRattle", 0.6f, (t, r) =>
+    {
+        // Seven clacks, 80 ms apart, each a short hollow knock that fades out.
+        float local = t % 0.08f;
+        float fade = 1f - t / 0.6f;
+        return (Noise(r) * 0.5f * Mathf.Exp(-local * 160f)
+                + Mathf.Sin(2f * Mathf.PI * 310f * local) * 0.6f * Mathf.Exp(-local * 70f)) * fade;
+    });
+
+    /// <summary>
+    /// The Coronado burning away in the sunrise: a loud sizzle that swells, then
+    /// thins out into a dry crackle of ash (~2.8 s).
+    /// </summary>
+    public static AudioClip SunBurn => s_SunBurn ??= Build("SunBurn", 2.8f, (t, r) =>
+    {
+        float swell = Mathf.Clamp01(t / 0.35f) * Mathf.Clamp01((2.8f - t) / 1.4f);
+        float hiss = Noise(r) * 0.55f * swell;
+        float crackle = r.NextDouble() < 0.004 ? Noise(r) * 0.9f : 0f;
+        float groan = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(140f, 45f, t / 2.8f) * t) * 0.35f * Mathf.Exp(-t * 1.2f);
+        return hiss + crackle + groan;
+    });
 
     /// <summary>Fire-and-forget 3D one-shot at a world position (the source may already be destroyed).</summary>
     public static void PlayAt(AudioClip clip, Vector3 position, float volume = 1f, float pitch = 1f)

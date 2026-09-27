@@ -200,6 +200,9 @@ public class NightEnvironmentController : MonoBehaviour
     bool m_BloodMoon;
     float m_BloodMoonStart;
     float m_Afternoon;
+    bool m_SunriseForced;
+    float m_SunriseDuration;
+    float m_Sunrise;
 
     Material m_MoonMaterial;
     Transform m_Sun;
@@ -222,6 +225,9 @@ public class NightEnvironmentController : MonoBehaviour
         set => m_ForcedNormalized = value;
     }
 
+    /// <summary>The dawn chorus loop (null until built). GameManager keeps it audible on victory.</summary>
+    public AudioSource BirdsSource => m_BirdsSource;
+
     /// <summary>True once the afternoon has fully bled into night.</summary>
     public bool DuskComplete => m_Dusk >= 1f;
 
@@ -235,6 +241,21 @@ public class NightEnvironmentController : MonoBehaviour
     public void BeginDuskRush()
     {
         m_DuskRushing = true;
+    }
+
+    /// <summary>
+    /// The Coronado's defeat (see GameManager.WinByBossDefeat): runs the rest
+    /// of the night out to full day over <paramref name="duration"/> seconds,
+    /// whatever the survival clock says - the red moon sinks out of the sky and
+    /// the sun climbs in its place. Only ever moves the sky forward; idempotent.
+    /// </summary>
+    public void ForceSunrise(float duration)
+    {
+        if (m_SunriseForced)
+            return;
+
+        m_SunriseForced = true;
+        m_SunriseDuration = Mathf.Max(0.05f, duration);
     }
 
     /// <summary>
@@ -289,6 +310,9 @@ public class NightEnvironmentController : MonoBehaviour
         if (m_StartInAfternoon && m_Dusk >= 1f)
             TriggerBloodMoon();
 
+        if (m_SunriseForced)
+            m_Sunrise = Mathf.MoveTowards(m_Sunrise, 1f, Time.deltaTime / m_SunriseDuration);
+
         float n = m_ForcedNormalized ?? (m_Campfire != null ? m_Campfire.FuelNormalized : 0f);
         Apply(n);
     }
@@ -306,7 +330,19 @@ public class NightEnvironmentController : MonoBehaviour
     void Apply(float normalized)
     {
         float survival = m_GameManager != null ? m_GameManager.SurvivalNormalized : 0f;
-        Apply(normalized, DawnFromSurvival(survival), survival);
+        float dawn = DawnFromSurvival(survival);
+
+        // A forced sunrise pulls both the moon's clock and the dawn to the end
+        // from wherever the night happened to be; smoothstep so the sky eases
+        // in and settles rather than snapping.
+        if (m_SunriseForced)
+        {
+            float sunrise = Mathf.SmoothStep(0f, 1f, m_Sunrise);
+            survival = Mathf.Lerp(survival, 1f, sunrise);
+            dawn = Mathf.Max(dawn, sunrise);
+        }
+
+        Apply(normalized, dawn, survival);
     }
 
     /// <summary>

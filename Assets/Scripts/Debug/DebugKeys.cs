@@ -37,7 +37,8 @@ public class DebugKeys : MonoBehaviour
     float m_SkipToSeconds = 170f;
 
     [SerializeField]
-    [Tooltip("'B' invokes the Coronado 15 m in front of the player, to test the gaze-freeze rule.")]
+    [Tooltip("'B' invokes the Coronado 15 m in front of the player, to test the gaze-freeze rule. " +
+             "'K' counts one push-back on it (three win the night).")]
     Coronado m_Coronado;
 
     [SerializeField]
@@ -74,6 +75,12 @@ public class DebugKeys : MonoBehaviour
 
         if (keyboard.jKey.wasPressedThisFrame && m_BossIntro != null)
             m_BossIntro.DebugTriggerNow();
+
+        // 'K' counts one push-back on the Coronado (summoning it 6 m ahead if
+        // it is not out yet): three presses run the final lunge, the sunrise,
+        // the disintegration and the victory credits.
+        if (keyboard.kKey.wasPressedThisFrame && m_Coronado != null)
+            m_Coronado.DebugPushback();
 
         // '4' instantly burns the fire out, to test the outage (fast swarm,
         // retreating enemies, relight-to-resume) without waiting.

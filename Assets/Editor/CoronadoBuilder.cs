@@ -5,8 +5,10 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Builds the Coronado placeholder in Game.unity: a tall capsule with two
-/// small emissive, glowing spheres for eyes, nothing else visible (see
+/// Builds the Coronado in Game.unity: the Fantasma ghost model (imported from
+/// Assets/Fantasma.unitypackage and tidied into <see cref="k_GhostFolder"/>)
+/// scaled to the boss's height, with two small emissive, glowing spheres for
+/// eyes (see
 /// JEFE_FINAL.md - only the gaze mechanic, the entrance and the three
 /// localization channels exist so far). Also builds two of those channels as
 /// scene objects that need no runtime logic of their own: a continuous 3D
@@ -32,13 +34,18 @@ public static class CoronadoBuilder
 {
     const string k_ScenePath = "Assets/Scenes/Game.unity";
     const string k_MaterialFolder = "Assets/Materials/Game";
+    const string k_GhostFolder = "Assets/Models/Fantasma";
+    const string k_GhostModelName = "Ghost Model";
+    const int k_GhostTextureMaxSize = 2048;
+    // Yaw applied to the ghost model so its face looks down the Coronado's +Z.
+    const float k_GhostYaw = -90f; // the imported model faces +X
     const float k_Height = 2.4f;
     const float k_Radius = 0.35f;
     const float k_EyeLightRange = 4f;
     const float k_EyeLightIntensity = 3f;
     const float k_LightAbsorbRadius = 2f;
     const float k_LightAbsorbAlpha = 0.55f;
-    const float k_BreathVolume = 0.8f;
+    const float k_BreathVolume = 1f;
     const float k_BreathMinDistance = 1.5f;
     const float k_BreathMaxDistance = 30f;
     static readonly Color k_BodyColor = new Color(0.05f, 0.05f, 0.06f);
@@ -67,6 +74,7 @@ public static class CoronadoBuilder
             root = coronado.gameObject;
         }
 
+        MoveGhostAssets();
         BuildBody(root);
         BuildEyes(root);
         BuildBreath(root, coronado);
@@ -89,7 +97,11 @@ public static class CoronadoBuilder
 
         var gameManager = Object.FindAnyObjectByType<GameManager>(FindObjectsInactive.Include);
         if (gameManager != null)
+        {
             SetRef(coronado, "m_GameManager", gameManager);
+            // The victory hands a Coronado still in the scene to the sunrise.
+            SetRef(gameManager, "m_Coronado", coronado);
+        }
 
         var debug = Object.FindAnyObjectByType<DebugKeys>(FindObjectsInactive.Include);
         if (debug != null)
@@ -147,12 +159,90 @@ public static class CoronadoBuilder
             SetRef(debug, "m_BossIntro", bossIntro);
     }
 
+    /// <summary>
+    /// The package imports its files loose at the root of Assets; move them
+    /// (GUIDs kept, so nothing breaks) into <see cref="k_GhostFolder"/> and cap
+    /// the 4K textures for Quest. Idempotent: does nothing once moved.
+    /// </summary>
+    static void MoveGhostAssets()
+    {
+        if (!AssetDatabase.IsValidFolder("Assets/Models"))
+            AssetDatabase.CreateFolder("Assets", "Models");
+        if (!AssetDatabase.IsValidFolder(k_GhostFolder))
+            AssetDatabase.CreateFolder("Assets/Models", "Fantasma");
+
+        MoveIfPresent("Assets/ghost.fbx", $"{k_GhostFolder}/ghost.fbx");
+        MoveIfPresent("Assets/ghost.prefab", $"{k_GhostFolder}/ghost.prefab");
+        MoveIfPresent("Assets/images", $"{k_GhostFolder}/images");
+        MoveIfPresent("Assets/material", $"{k_GhostFolder}/material");
+
+        foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { k_GhostFolder }))
+        {
+            var path = AssetDatabase.GUIDToAssetPath(guid);
+            if (AssetImporter.GetAtPath(path) is TextureImporter importer && importer.maxTextureSize != k_GhostTextureMaxSize)
+            {
+                importer.maxTextureSize = k_GhostTextureMaxSize;
+                importer.SaveAndReimport();
+            }
+        }
+    }
+
+    static void MoveIfPresent(string from, string to)
+    {
+        if (string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(from, AssetPathToGUIDOptions.OnlyExistingAssets)))
+            return;
+        if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(to, AssetPathToGUIDOptions.OnlyExistingAssets)))
+        {
+            Debug.LogWarning($"[CoronadoBuilder] {to} already exists; left {from} where it is.");
+            return;
+        }
+
+        var error = AssetDatabase.MoveAsset(from, to);
+        if (!string.IsNullOrEmpty(error))
+            Debug.LogWarning($"[CoronadoBuilder] Could not move {from}: {error}");
+    }
+
+    /// <summary>
+    /// The ghost model, fitted to <see cref="k_Height"/> with its feet on the
+    /// Coronado's pivot. Replaces the old capsule placeholder ("Body"). The
+    /// gameplay collider stays a capsule on the root so the gaze raycast and
+    /// the arrows hit the same shape as before.
+    /// </summary>
     static void BuildBody(GameObject root)
     {
-        var bodyGo = FindOrCreatePrimitive(root.transform, "Body", PrimitiveType.Capsule);
-        bodyGo.transform.localPosition = new Vector3(0f, k_Height * 0.5f, 0f);
-        bodyGo.transform.localScale = new Vector3(k_Radius * 2f, k_Height * 0.5f, k_Radius * 2f);
-        bodyGo.GetComponent<Renderer>().sharedMaterial = GetOrCreateMaterial("M_Coronado_Body", k_BodyColor, null);
+        var oldCapsule = root.transform.Find("Body");
+        if (oldCapsule != null)
+            Object.DestroyImmediate(oldCapsule.gameObject);
+
+        var ghostAsset = AssetDatabase.LoadAssetAtPath<GameObject>($"{k_GhostFolder}/ghost.prefab")
+                         ?? AssetDatabase.LoadAssetAtPath<GameObject>($"{k_GhostFolder}/ghost.fbx");
+        if (ghostAsset == null)
+        {
+            Debug.LogError($"[CoronadoBuilder] No ghost model under {k_GhostFolder}; import Assets/Fantasma.unitypackage first.");
+            return;
+        }
+
+        var existing = root.transform.Find(k_GhostModelName);
+        if (existing != null)
+            Object.DestroyImmediate(existing.gameObject);
+
+        var ghost = (GameObject)PrefabUtility.InstantiatePrefab(ghostAsset);
+        ghost.name = k_GhostModelName;
+        ghost.transform.SetParent(root.transform, false);
+        ghost.transform.localPosition = Vector3.zero;
+        ghost.transform.localRotation = Quaternion.Euler(0f, k_GhostYaw, 0f);
+        ghost.transform.localScale = Vector3.one;
+
+        foreach (var collider in ghost.GetComponentsInChildren<Collider>(true))
+            Object.DestroyImmediate(collider);
+        foreach (var renderer in ghost.GetComponentsInChildren<Renderer>(true))
+        {
+            // Only the campfire casts shadows (see CLAUDE.md); a receiving-only
+            // ghost keeps the fire's long shadows as the one radar.
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        FitToHeight(root.transform, ghost.transform);
 
         var capsule = root.GetComponent<CapsuleCollider>();
         if (capsule == null)
@@ -162,11 +252,42 @@ public static class CoronadoBuilder
         capsule.radius = k_Radius;
     }
 
+    /// <summary>Scales the model uniformly to <see cref="k_Height"/> and drops its lowest point onto the root's pivot, centred.</summary>
+    static void FitToHeight(Transform root, Transform model)
+    {
+        var renderers = model.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0)
+            return;
+
+        // Measure in the root's space with the root at identity so a parked or
+        // rotated Coronado does not skew the fit.
+        var savedPosition = root.position;
+        var savedRotation = root.rotation;
+        var savedScale = root.localScale;
+        root.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        root.localScale = Vector3.one;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+
+        if (bounds.size.y > 0.0001f)
+        {
+            float factor = k_Height / bounds.size.y;
+            model.localScale *= factor;
+            model.localPosition = new Vector3(-bounds.center.x * factor, -bounds.min.y * factor, -bounds.center.z * factor);
+        }
+
+        root.SetPositionAndRotation(savedPosition, savedRotation);
+        root.localScale = savedScale;
+    }
+
     static void BuildEyes(GameObject root)
     {
         var eyeMaterial = GetOrCreateMaterial("M_Coronado_Eyes", k_EyeColor, k_EyeColor * 3f);
-        float eyeHeight = k_Height - 0.18f;
-        float eyeForward = k_Radius * 0.85f;
+        // Inside the ghost's hood, where its face glows.
+        float eyeHeight = k_Height - 0.4f;
+        float eyeForward = 0.16f;
 
         BuildEye(root, "Eye_L", new Vector3(-0.09f, eyeHeight, eyeForward), eyeMaterial);
         BuildEye(root, "Eye_R", new Vector3(0.09f, eyeHeight, eyeForward), eyeMaterial);
@@ -207,7 +328,8 @@ public static class CoronadoBuilder
     static void BuildBreath(GameObject root, Coronado coronado)
     {
         var breathGo = FindOrCreateChild(root.transform, "Breath");
-        breathGo.transform.localPosition = new Vector3(0f, k_Height * 0.5f, 0f);
+        // At the hood, where a head would be: the height cue matters too.
+        breathGo.transform.localPosition = new Vector3(0f, k_Height - 0.4f, 0f);
 
         var audio = breathGo.GetComponent<AudioSource>();
         if (audio == null)
@@ -215,6 +337,12 @@ public static class CoronadoBuilder
         audio.loop = true;
         audio.playOnAwake = false;
         audio.spatialBlend = 1f;
+        // Meta XR Audio's HRTF (the project's spatializer): unlike plain
+        // stereo panning it separates in front from behind and above from
+        // below, so the breath alone says where the ghost is.
+        audio.spatialize = true;
+        audio.spread = 0f;
+        audio.dopplerLevel = 0f;
         audio.rolloffMode = AudioRolloffMode.Logarithmic;
         audio.minDistance = k_BreathMinDistance;
         audio.maxDistance = k_BreathMaxDistance;

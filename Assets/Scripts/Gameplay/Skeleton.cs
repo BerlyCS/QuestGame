@@ -258,6 +258,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
     {
         if (m_Campfire == null)
             m_Campfire = Object.FindAnyObjectByType<CampfireFuel>();
+
+        // Gives itself away now and then while hidden among the trees.
+        if (!TryGetComponent(out EnemyTell _))
+            gameObject.AddComponent<EnemyTell>();
     }
 
     void Update()
@@ -480,7 +484,10 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             m_Animator.SetTrigger(k_HitHash);
 
         if (m_Hits <= 0f)
+        {
+            PlayerBreathing.ReportKill();
             Die();
+        }
     }
 
     /// <summary>
@@ -501,6 +508,7 @@ public class Skeleton : MonoBehaviour, IArrowHittable
             return;
         }
 
+        PlayerBreathing.ReportKill();
         Die();
     }
 

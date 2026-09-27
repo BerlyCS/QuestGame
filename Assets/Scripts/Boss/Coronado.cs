@@ -34,6 +34,14 @@ using UnityEngine;
 /// NO health: the distance IS the health bar (see JEFE_FINAL.md 5). Every hit
 /// only pushes it away; nothing here ever reduces a hit-point counter.
 ///
+/// Derrota: lo que sí se cuenta son los retrocesos. Cada vez que el jugador lo
+/// hace retroceder (flecha que lo empuja en Fase 1/2, o manotazo en Fase 3)
+/// suma uno; al llegar a <see cref="m_PushbacksToDefeat"/> se congela, se
+/// abalanza hasta quedar muy cerca de la cara del jugador y ahí lo alcanza el
+/// amanecer: GameManager fuerza la salida del sol y el sol lo desintegra en
+/// ceniza (<see cref="DisintegrateBySun"/>). Ser alcanzado por él (el zarpazo)
+/// no cuenta como retroceso.
+///
 /// The model is placeholder on purpose (see CLAUDE.md): a tall capsule with
 /// two small emissive spheres for eyes, built by CoronadoBuilder.
 /// </summary>
@@ -136,12 +144,33 @@ public class Coronado : MonoBehaviour, IArrowHittable
     [Tooltip("GameObject con PlayerHealth; si se deja vacío se busca en la escena.")]
     [SerializeField] PlayerHealth m_PlayerHealth;
 
+    [Header("Derrota: 3 retrocesos y el sol lo desintegra")]
+    [Tooltip("Retrocesos (flecha que lo empuja o manotazo) necesarios para vencerlo.")]
+    [SerializeField] int m_PushbacksToDefeat = 3;
+    [Tooltip("GameManager al que se avisa de la victoria. Si se deja vacío se busca en la escena.")]
+    [SerializeField] GameManager m_GameManager;
+    [Tooltip("Congelación antes de la embestida final: el mismo medio segundo que hace funcionar el susto.")]
+    [SerializeField] float m_FinalFreezeDuration = 0.6f;
+    [Tooltip("Duración de la embestida final hacia la cara del jugador.")]
+    [SerializeField] float m_FinalLungeDuration = 0.35f;
+    [Tooltip("Distancia a la cámara donde se queda su centro tras la embestida final. " +
+             "Muy cerca, pero nunca por debajo de m_CatchMinCameraDistance.")]
+    [SerializeField] float m_FinalLungeDistance = 0.8f;
+    [Tooltip("Cuánto tarda en deshacerse en ceniza cuando le da el sol.")]
+    [SerializeField] float m_DisintegrateDuration = 2.8f;
+    [SerializeField] Color m_BurnColor = new Color(1f, 0.55f, 0.15f);
+    [SerializeField] Color m_BurnHotColor = new Color(1f, 0.95f, 0.8f);
+
     [Header("Referencias")]
     [Tooltip("Cámara del jugador (CenterEyeAnchor). Si se deja vacío, usa Camera.main.")]
     [SerializeField] Transform m_PlayerCamera;
 
     [Tooltip("AudioSource 3D de la respiración (canal 1, JEFE_FINAL.md 6.1). Construido por CoronadoBuilder.")]
     [SerializeField] AudioSource m_BreathAudio;
+
+    [Tooltip("Respiración del fantasma (Assets/Audio/ghostbreath.mp3), en bucle y espacializada: dice por " +
+             "dónde anda - delante, detrás, lejos, cerca. Vacío = la respiración procedural.")]
+    [SerializeField] AudioClip m_BreathClip;
 
     bool m_Frozen;
     float m_UnseenTimer;
@@ -156,9 +185,15 @@ public class Coronado : MonoBehaviour, IArrowHittable
     Color[] m_BaseColors;
 
     bool m_Caught;
+    int m_Pushbacks;
+    bool m_Defeated;
+    bool m_Disintegrating;
 
     /// <summary>True mientras el jugador lo tiene dentro del cono y nada lo tapa.</summary>
     public bool IsFrozen => m_Frozen;
+
+    /// <summary>True desde el tercer retroceso: ya no persigue, solo le queda la embestida final y el sol.</summary>
+    public bool IsDefeated => m_Defeated;
 
     /// <summary>El punto de este jefe que cuenta para el cono de visión.</summary>
     Vector3 Center => transform.position + Vector3.up * m_CenterHeight;
@@ -171,6 +206,8 @@ public class Coronado : MonoBehaviour, IArrowHittable
             m_Campfire = Object.FindAnyObjectByType<CampfireFuel>();
         if (m_PlayerHealth == null)
             m_PlayerHealth = Object.FindAnyObjectByType<PlayerHealth>();
+        if (m_GameManager == null)
+            m_GameManager = Object.FindAnyObjectByType<GameManager>();
 
         m_OrbitDirection = Random.value < 0.5f ? 1f : -1f;
 
@@ -179,11 +216,17 @@ public class Coronado : MonoBehaviour, IArrowHittable
         // de CampfireFuel.Awake(). Empieza a sonar en cuanto el jefe aparece.
         if (m_BreathAudio != null)
         {
-            m_BreathAudio.clip = ProceduralSfx.CoronadoBreath;
+            m_BreathAudio.clip = m_BreathClip != null ? m_BreathClip : ProceduralSfx.CoronadoBreath;
             m_BreathAudio.Play();
         }
 
         CacheRenderers();
+
+        // Its approach is announced by flares in the hood and a growl that
+        // come faster and stronger as it closes in (see EnemyTell).
+        if (!TryGetComponent(out EnemyTell tell))
+            tell = gameObject.AddComponent<EnemyTell>();
+        tell.ConfigureForBoss(m_CenterHeight + 0.85f, 15f, m_CazaDistance);
     }
 
     /// <summary>Para el destello blanco del empujón: guarda el color base de cada renderer (cuerpo y ojos).</summary>
@@ -199,7 +242,8 @@ public class Coronado : MonoBehaviour, IArrowHittable
     {
         // Ya lo tiene. La secuencia del zarpazo manda a partir de aquí; no hay
         // nada más que hacer hasta que el propio zarpazo lo devuelva a Fase 2.
-        if (m_Caught)
+        // Vencido, manda la secuencia final hasta que el sol lo desintegre.
+        if (m_Caught || m_Defeated)
             return;
 
         UpdateFlash();
@@ -336,7 +380,259 @@ public class Coronado : MonoBehaviour, IArrowHittable
         m_NextPushAllowedTime = Time.time + m_PushCooldown;
         m_FlashUntil = Time.time + m_PushFlashDuration;
         ProceduralSfx.PlayAt(ProceduralSfx.EnemyHit, Center);
+        if (CountPushback())
+            return;
         StartCoroutine(LaunchBackRoutine(ComputePushedPosition(m_HandPushbackDistance)));
+    }
+
+    /// <summary>
+    /// Suma un retroceso y, si era el último, arranca la secuencia final en vez
+    /// del empuje normal. Devuelve true cuando ha empezado esa secuencia.
+    /// </summary>
+    bool CountPushback()
+    {
+        if (m_Defeated)
+            return true;
+
+        m_Pushbacks++;
+        if (m_Pushbacks < m_PushbacksToDefeat)
+            return false;
+
+        m_Defeated = true;
+        StopAllCoroutines();
+        m_Launching = false;
+        m_Caught = false;
+        StartCoroutine(FinalLungeSequence());
+        return true;
+    }
+
+    /// <summary>
+    /// El tercer retroceso: se congela, grita y se abalanza hasta quedar a
+    /// <see cref="m_FinalLungeDistance"/> de la cara del jugador (con el mismo
+    /// límite de seguridad del zarpazo: nunca más cerca de
+    /// <see cref="m_CatchMinCameraDistance"/>, y nunca mueve la cámara). No hace
+    /// daño. Justo ahí amanece: GameManager saca el sol y llama a
+    /// <see cref="DisintegrateBySun"/>.
+    /// </summary>
+    IEnumerator FinalLungeSequence()
+    {
+        m_Frozen = true;
+        if (m_Campfire != null)
+            m_Campfire.SetProximityDrainMultiplier(1f);
+
+        yield return new WaitForSeconds(m_FinalFreezeDuration);
+
+        ProceduralSfx.PlayAt(ProceduralSfx.CoronadoScream, Center, 1f, 0.8f);
+
+        Vector3 startPosition = transform.position;
+        Vector3 targetPosition = FinalLungeTargetPosition();
+        Quaternion startRotation = transform.rotation;
+        Quaternion targetRotation = startRotation;
+        if (m_PlayerCamera != null)
+        {
+            Vector3 towardPlayer = Vector3.ProjectOnPlane(m_PlayerCamera.position - targetPosition, Vector3.up);
+            if (towardPlayer.sqrMagnitude > 0.0001f)
+                targetRotation = Quaternion.LookRotation(towardPlayer.normalized, Vector3.up);
+        }
+
+        float t = 0f;
+        while (t < m_FinalLungeDuration)
+        {
+            t += Time.deltaTime;
+            float eased = Mathf.Clamp01(t / m_FinalLungeDuration);
+            eased *= eased; // arranca despacio, embiste de golpe al final
+            transform.position = Vector3.Lerp(startPosition, targetPosition, eased);
+            transform.rotation = Quaternion.Slerp(startRotation, targetRotation, eased);
+            yield return null;
+        }
+
+        transform.position = targetPosition;
+        transform.rotation = targetRotation;
+
+        if (m_GameManager != null)
+            m_GameManager.WinByBossDefeat();
+        else
+            DisintegrateBySun();
+    }
+
+    /// <summary>Delante de la cara, en la dirección a la que mira el jugador, a la distancia final (con el tope de seguridad).</summary>
+    Vector3 FinalLungeTargetPosition()
+    {
+        if (m_PlayerCamera == null)
+            return transform.position;
+
+        Vector3 forward = Vector3.ProjectOnPlane(m_PlayerCamera.forward, Vector3.up);
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        forward.Normalize();
+
+        float distance = Mathf.Max(m_FinalLungeDistance, m_CatchMinCameraDistance);
+        Vector3 centerPosition = m_PlayerCamera.position + forward * distance;
+        return centerPosition - Vector3.up * m_CenterHeight;
+    }
+
+    /// <summary>
+    /// El sol lo alcanza: se pone al rojo, luego al blanco, se encoge y sube
+    /// deshaciéndose en ceniza y brasas mientras chisporrotea, y desaparece.
+    /// Lo llama GameManager en cualquier victoria mientras el jefe esté en
+    /// escena (derrotado o no). Idempotente.
+    /// </summary>
+    public void DisintegrateBySun()
+    {
+        if (m_Disintegrating || !gameObject.activeInHierarchy)
+            return;
+
+        m_Disintegrating = true;
+        m_Defeated = true;
+        StopAllCoroutines();
+        StartCoroutine(DisintegrateRoutine());
+    }
+
+    IEnumerator DisintegrateRoutine()
+    {
+        m_Frozen = true;
+        m_Launching = false;
+        m_Caught = false;
+
+        if (m_BreathAudio != null)
+            m_BreathAudio.Stop();
+        if (m_Campfire != null)
+        {
+            m_Campfire.SetProximityDrainMultiplier(1f);
+            m_Campfire.SetThreatPosition(null);
+        }
+
+        ProceduralSfx.PlayAt(ProceduralSfx.CoronadoScream, Center, 1f, 0.7f);
+        ProceduralSfx.PlayAt(ProceduralSfx.SunBurn, Center);
+
+        // La esfera de oscuridad se va con él de golpe: al sol no le queda nada que absorber.
+        var absorb = transform.Find("Light Absorb");
+        if (absorb != null)
+            absorb.gameObject.SetActive(false);
+
+        var ash = BuildAshParticles();
+        var lights = GetComponentsInChildren<Light>();
+        float[] lightIntensities = new float[lights.Length];
+        for (int i = 0; i < lights.Length; i++)
+            lightIntensities[i] = lights[i].intensity;
+
+        if (m_Renderers == null)
+            CacheRenderers();
+        foreach (var r in m_Renderers)
+        {
+            if (r != null && r.material.HasProperty("_EmissionColor"))
+            {
+                // The ghost's emission map only lights its face; drop it so the
+                // whole body glows as it burns.
+                r.material.EnableKeyword("_EMISSION");
+                if (r.material.HasProperty("_EmissionMap"))
+                    r.material.SetTexture("_EmissionMap", null);
+            }
+        }
+
+        Vector3 startPosition = transform.position;
+        Vector3 startScale = transform.localScale;
+
+        float t = 0f;
+        while (t < m_DisintegrateDuration)
+        {
+            t += Time.deltaTime;
+            float n = Mathf.Clamp01(t / m_DisintegrateDuration);
+
+            // Primero arde (naranja), después se vuelve blanco y se deshace.
+            Color glow = n < 0.5f
+                ? Color.Lerp(Color.black, m_BurnColor * 3f, n / 0.5f)
+                : Color.Lerp(m_BurnColor * 3f, m_BurnHotColor * 5f, (n - 0.5f) / 0.5f);
+            for (int i = 0; i < m_Renderers.Length; i++)
+            {
+                var r = m_Renderers[i];
+                if (r == null)
+                    continue;
+                if (r.material.HasProperty("_EmissionColor"))
+                    r.material.SetColor("_EmissionColor", glow);
+                r.material.color = Color.Lerp(m_BaseColors[i], m_BurnHotColor, n);
+            }
+
+            // Tiembla, se encoge y sube como si el calor se lo llevara.
+            float shrink = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.35f, 1f, n));
+            Vector3 jitter = Random.insideUnitSphere * 0.03f * (1f - n);
+            transform.position = startPosition + Vector3.up * (0.6f * n * n) + jitter;
+            transform.localScale = startScale * Mathf.Max(0.001f, shrink);
+
+            for (int i = 0; i < lights.Length; i++)
+                if (lights[i] != null)
+                    lights[i].intensity = lightIntensities[i] * (1f - n);
+
+            if (ash != null)
+                ash.transform.position = startPosition + Vector3.up * m_CenterHeight;
+
+            yield return null;
+        }
+
+        if (ash != null)
+        {
+            var emission = ash.emission;
+            emission.rateOverTime = 0f;
+            ash.Emit(120);
+            ash.transform.SetParent(null, true);
+            ash.gameObject.AddComponent<AutoDestroyAfter>().Lifetime = 3f;
+        }
+
+        gameObject.SetActive(false);
+    }
+
+    /// <summary>Ceniza gris y brasas naranjas que suben con el calor: el cuerpo deshaciéndose, sin hápticos, a la vista.</summary>
+    ParticleSystem BuildAshParticles()
+    {
+        var go = new GameObject("Coronado Ash");
+        go.transform.position = Center;
+        var ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        var main = ps.main;
+        main.duration = m_DisintegrateDuration;
+        main.loop = false;
+        main.playOnAwake = false;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.8f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.2f, 1.2f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.09f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(0.25f, 0.23f, 0.22f, 1f),
+            new Color(1f, 0.55f, 0.15f, 1f));
+        main.gravityModifier = -0.25f;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 600;
+
+        var emission = ps.emission;
+        emission.enabled = true;
+        emission.rateOverTime = 160f;
+
+        var shape = ps.shape;
+        shape.enabled = true;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 0.45f;
+
+        var noise = ps.noise;
+        noise.enabled = true;
+        noise.strength = 0.4f;
+        noise.frequency = 0.8f;
+
+        var colorOverLifetime = ps.colorOverLifetime;
+        colorOverLifetime.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(0.3f, 0.3f, 0.3f), 1f) },
+            new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        colorOverLifetime.color = new ParticleSystem.MinMaxGradient(gradient);
+
+        var renderer = ps.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Sprites/Default");
+        if (shader != null)
+            renderer.sharedMaterial = new Material(shader) { name = "M_CoronadoAsh" };
+
+        ps.Play();
+        return ps;
     }
 
     /// <summary>
@@ -415,6 +711,11 @@ public class Coronado : MonoBehaviour, IArrowHittable
 
         ProceduralSfx.PlayAt(ProceduralSfx.CoronadoScream, Center); // grito agudo
         ProceduralSfx.PlayAt(ProceduralSfx.EnemyHit, Center); // golpe seco
+
+        // La misma risa siniestra de cuando te matan los esqueletos: que te
+        // alcance tiene que sonar a perder, aunque el golpe no sea letal.
+        if (m_GameManager != null)
+            m_GameManager.PlayLaugh();
 
         if (m_PlayerHealth != null)
         {
@@ -604,7 +905,12 @@ public class Coronado : MonoBehaviour, IArrowHittable
     }
 
     /// <summary>A landed ember counts as one impact (see <see cref="IArrowHittable"/>). No puntos de vida.</summary>
-    public void Hit(Arrow arrow) => TakeImpact();
+    public void Hit(Arrow arrow)
+    {
+        if (m_Defeated)
+            return;
+        TakeImpact();
+    }
 
     /// <summary>Grita y retrocede visiblemente; el empuje depende de la fase actual.</summary>
     void TakeImpact()
@@ -618,6 +924,8 @@ public class Coronado : MonoBehaviour, IArrowHittable
         };
 
         ProceduralSfx.PlayAt(ProceduralSfx.CoronadoScream, Center);
+        if (pushback > 0f && CountPushback())
+            return;
         PushBack(pushback);
     }
 
@@ -676,6 +984,20 @@ public class Coronado : MonoBehaviour, IArrowHittable
         }
 
         gameObject.SetActive(true);
+    }
+
+    /// <summary>
+    /// Debug-only (tecla 'K'): cuenta un retroceso como si lo hubiera empujado
+    /// una flecha. Si todavía no ha salido, lo invoca a 6 m primero.
+    /// </summary>
+    public void DebugPushback()
+    {
+        if (m_Defeated)
+            return;
+        if (!gameObject.activeInHierarchy)
+            DebugSummon(6f);
+        if (!CountPushback())
+            PushBack(m_CercoPushback);
     }
 
     /// <summary>

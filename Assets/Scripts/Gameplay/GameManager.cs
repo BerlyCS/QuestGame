@@ -3,14 +3,17 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Owns the ways the night ends. There is no UI at all (see CLAUDE.md): no Game
-/// Over screen, no buttons and no text - the world goes bright with a calm
-/// birdsong on victory, or the screen floods red with a sinister laugh on
-/// defeat (see <see cref="PlayerHealth"/>), then the scene reloads.
+/// Owns the ways the night ends. There is no UI at all (see CLAUDE.md): no
+/// text, no cards. Victory is declared by the sun and the victory music
+/// (<see cref="m_VictoryMusic"/>, Assets/Audio/finalfeliz.mp3); defeat by the
+/// screen flooding red with a sinister laugh (see <see cref="PlayerHealth"/>).
 ///
-/// Victory: survive <see cref="m_SurvivalDuration"/> seconds. Every Caminante
-/// freezes and collapses, the world lights up for
-/// <see cref="m_VictoryLitDuration"/> seconds, then restarts.
+/// Victory, two ways: survive <see cref="m_SurvivalDuration"/> seconds, or
+/// defeat the Coronado (<see cref="WinByBossDefeat"/>: pushed back three
+/// times, it lunges at the player and the sunrise catches it). Either way the
+/// sun is forced up (the red moon sinks), every enemy collapses, a Coronado
+/// still in the scene is burned away by the sun, the victory music plays and
+/// the scene restarts <see cref="m_VictoryRestartDelay"/> seconds later.
 ///
 /// Defeat: the player's life runs out (PlayerHealth.OnDied). The screen turns
 /// completely red over <see cref="m_DefeatFadeDuration"/> seconds while the
@@ -42,7 +45,20 @@ public class GameManager : MonoBehaviour
 
     [Header("Victory")]
     [SerializeField] float m_SurvivalDuration = 240f;
-    [SerializeField] float m_VictoryLitDuration = 10f;
+    [Tooltip("Seconds the forced sunrise takes to carry the sky from wherever the night is to full day.")]
+    [SerializeField] float m_SunriseDuration = 3f;
+    [Tooltip("The final boss; on victory, if it is still in the scene, the sun burns it away.")]
+    [SerializeField] Coronado m_Coronado;
+
+    [Header("Victory music")]
+    [Tooltip("Plays once, 2D, the moment the night is won: the sound that tells the player they won. " +
+        "Wired to Assets/Audio/finalfeliz.mp3 by Tools/Game/Wire Game Audio.")]
+    [SerializeField] AudioClip m_VictoryMusic;
+    [SerializeField, Range(0f, 1f)] float m_VictoryMusicVolume = 1f;
+    [Tooltip("The player's tired breathing; calmed on victory (the sigh takes over) and on defeat.")]
+    [SerializeField] PlayerBreathing m_PlayerBreathing;
+    [Tooltip("Seconds from the victory to the restart: long enough for the sunrise, the Coronado burning away and the music.")]
+    [SerializeField] float m_VictoryRestartDelay = 12f;
 
     [Header("Night difficulty (steps every 30 s by default)")]
     [Tooltip("Seconds per difficulty step. Every step the spawners keep one more enemy of each kind alive " +
@@ -58,14 +74,14 @@ public class GameManager : MonoBehaviour
     [SerializeField] float m_FireDamageRampPerStep = -0.12f;
     [Tooltip("Lowest the campfire-damage multiplier can fall to.")]
     [SerializeField] float m_FireDamageFloor = 0.6f;
-    [Tooltip("How hard a Cazador takes off the player at the start of the night. Kept low: the swarm is " +
-        "meant to be constant company, not a death sentence.")]
-    [SerializeField] float m_PlayerDamageStart = 0.6f;
-    [Tooltip("Player-damage multiplier removed per step. Negative: late, fast Cazadores claw often but " +
-        "barely scratch.")]
-    [SerializeField] float m_PlayerDamageRampPerStep = -0.05f;
+    [Tooltip("How hard a Cazador takes off the player: a multiplier on its base claw (10). 1.2 = 12 per claw, " +
+        "so the player's 150 health lasts about 13 claws (see Tools/Game/Tune Player Damage).")]
+    [SerializeField] float m_PlayerDamageStart = 1.2f;
+    [Tooltip("Player-damage multiplier added per step. 0: a claw hurts the same all night long, so the " +
+        "number of claws to die never drifts.")]
+    [SerializeField] float m_PlayerDamageRampPerStep = 0f;
     [Tooltip("Lowest the Cazador player-damage multiplier can fall to.")]
-    [SerializeField] float m_PlayerDamageFloor = 0.2f;
+    [SerializeField] float m_PlayerDamageFloor = 1.2f;
     [Tooltip("Passive burn ramp across the whole night: 2 means the fire burns 3x as fast at victory as at the start.")]
     [SerializeField] float m_FireBurnRamp = 2f;
 
@@ -415,8 +431,22 @@ public class GameManager : MonoBehaviour
         foreach (var boneThrower in Object.FindObjectsByType<BoneThrower>(FindObjectsInactive.Exclude))
             boneThrower.Collapse();
 
+        // The sun, not the moon: whatever hour the night was at, the sky runs
+        // out to full day, the red moon sinks and the sun climbs in its place.
         if (m_NightEnvironment != null)
+        {
             m_NightEnvironment.ForcedNormalized = 1f;
+            m_NightEnvironment.ForceSunrise(m_SunriseDuration);
+        }
+
+        if (m_Coronado != null && m_Coronado.gameObject.activeInHierarchy)
+            m_Coronado.DisintegrateBySun();
+
+        // The fire's own crackle/forest bed come back up if the boss entrance
+        // had ducked them.
+        SetAmbienceDuck(1f);
+        if (m_Campfire != null)
+            m_Campfire.SetAudioDuckMultiplier(1f);
 
         // The twist (DISEÑO.md 1.3): what read as gold coins was teeth all along -
         // an instant swap, revealed by the same light that makes the bone log pile
@@ -424,8 +454,71 @@ public class GameManager : MonoBehaviour
         if (m_ChestRenderer != null && m_TeethMaterial != null)
             m_ChestRenderer.sharedMaterial = m_TeethMaterial;
 
-        Play2DSound(ProceduralSfx.BirdSong);
-        StartCoroutine(RestartAfter(m_VictoryLitDuration));
+        if (m_PlayerBreathing != null)
+            m_PlayerBreathing.Calm();
+
+        // The win is heard as exactly two things: the victory music and the
+        // dawn birds. Everything else in the world goes silent (see VictoryHush).
+        AudioSource music;
+        if (m_VictoryMusic != null)
+        {
+            music = Play2DSound(m_VictoryMusic, m_VictoryMusicVolume);
+        }
+        else
+        {
+            Debug.LogWarning("[GameManager] No victory music assigned; falling back to the birdsong.", this);
+            music = Play2DSound(ProceduralSfx.BirdSong);
+        }
+
+        StartCoroutine(VictoryHush(music));
+        StartCoroutine(RestartAfter(m_VictoryRestartDelay));
+    }
+
+    /// <summary>
+    /// Keeps every sound but the victory music and the dawn birds muted until
+    /// the scene restarts: the fire, the forest bed, the Coronado burning away,
+    /// the collapsing skeletons and any one-shot spawned after the win. Checked
+    /// every frame because those one-shots keep appearing; the first pass runs
+    /// in the same frame as the win, before anything is heard.
+    /// </summary>
+    IEnumerator VictoryHush(AudioSource music)
+    {
+        AudioSource birds = m_NightEnvironment != null ? m_NightEnvironment.BirdsSource : null;
+
+        while (true)
+        {
+            foreach (var source in Object.FindObjectsByType<AudioSource>(FindObjectsInactive.Exclude))
+            {
+                if (source != music && source != birds)
+                    source.mute = true;
+            }
+
+            yield return null;
+        }
+    }
+
+    /// <summary>
+    /// The sinister laugh, 2D: the same one that plays when the player dies.
+    /// The Coronado plays it when it catches the player (see
+    /// Coronado.CatchSequence), so being reached sounds like losing.
+    /// </summary>
+    public void PlayLaugh()
+    {
+        Play2DSound(m_LaughSfx != null ? m_LaughSfx : ProceduralSfx.SinisterLaugh);
+    }
+
+    /// <summary>
+    /// The Coronado has been pushed back for the last time and has lunged up to
+    /// the player's face (see Coronado.CountPushback): the night is won on the
+    /// spot, whatever the survival clock says. <see cref="Win"/> brings the sun
+    /// up and hands the Coronado to it.
+    /// </summary>
+    public void WinByBossDefeat()
+    {
+        if (m_GameOver)
+            return;
+
+        Win();
     }
 
     /// <summary>
@@ -449,6 +542,9 @@ public class GameManager : MonoBehaviour
     void Lose()
     {
         m_GameOver = true;
+
+        if (m_PlayerBreathing != null)
+            m_PlayerBreathing.Calm();
 
         if (m_SkeletonSpawner != null)
             m_SkeletonSpawner.enabled = false;
@@ -480,12 +576,13 @@ public class GameManager : MonoBehaviour
             m_Campfire.SetBurnsOverTime(burning);
     }
 
-    void Play2DSound(AudioClip clip)
+    AudioSource Play2DSound(AudioClip clip, float volume = 1f)
     {
         var source = gameObject.AddComponent<AudioSource>();
         source.spatialBlend = 0f;
         source.playOnAwake = false;
-        source.PlayOneShot(clip);
+        source.PlayOneShot(clip, volume);
+        return source;
     }
 
     /// <summary>
