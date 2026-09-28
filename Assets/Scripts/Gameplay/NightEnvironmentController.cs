@@ -53,10 +53,17 @@ public class NightEnvironmentController : MonoBehaviour
     [Tooltip("Fog density while the fire is well fed; the air is clear.")]
     [SerializeField] float m_FogDensity = 0.012f;
     [Tooltip("Fog density once the fire is down to embers, so darkness closes in. " +
-        "Ported from dev/Jafet's darkness effect.")]
-    [SerializeField] float m_DarknessFogDensity = 3.5f;
+        "Kept as a travelling haze rather than a total wall: with the clear-fuel threshold " +
+        "below, an existing value of 3.5 buried the whole camp within a metre as soon as the " +
+        "fire was only partly fed.")]
+    [SerializeField] float m_DarknessFogDensity = 0.3f;
     [Tooltip("Fuel fraction (0-1) treated as the ember floor when mapping fuel to darkness.")]
     [SerializeField] float m_DarknessFuelFloor = 0.08f;
+    [Tooltip("Fuel fraction (0-1) at or above which the air stays fully clear. Full clarity is " +
+        "reached at 0.8, so the first logs only partly clear the night: one log lands around " +
+        "0.30 fuel and is deliberately a touch dimmer than a fully-fed fire. Must sit above " +
+        "m_DarknessFuelFloor.")]
+    [SerializeField] float m_ClearFuel = 0.8f;
 
     [Header("Dawn (driven by survival time)")]
     [SerializeField] GameManager m_GameManager;
@@ -394,7 +401,11 @@ public class NightEnvironmentController : MonoBehaviour
         // Darkness fog (ported from dev/Jafet): the air thickens as the fire
         // burns down and clears again once it is fed, so letting the fire die
         // closes the world in. The dawn then clears whatever darkness remains.
-        float visibility = Mathf.Clamp01(Mathf.InverseLerp(m_DarknessFuelFloor, 1f, normalized));
+        // Clear at or above m_ClearFuel: a healthy, freshly-fed fire keeps the camp visible,
+        // and only a fire that is actually burning down lets the darkness close in. Mapping
+        // straight from m_DarknessFuelFloor to 1.0 made a partly-fed fire (the first log) a
+        // wall of black fog the moment night fell.
+        float visibility = Mathf.Clamp01(Mathf.InverseLerp(m_DarknessFuelFloor, m_ClearFuel, normalized));
         float fogDensity = Mathf.Lerp(m_DarknessFogDensity, m_FogDensity, visibility);
         RenderSettings.fogDensity = Mathf.Lerp(fogDensity, m_DawnFogDensity, dawn);
 

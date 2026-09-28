@@ -1060,6 +1060,7 @@ public static class GameSceneBuilder
 
         float height = k_CaminanteHeight * k_EnemyScale;
         var model = AttachSkeletonModel(root, "Skeleton_Warrior", height, k_EnemyWidthFactor, null, null);
+        AttachPropToHand(model, "Skeleton_Axe");
 
         var capsule = root.AddComponent<CapsuleCollider>();
         capsule.center = new Vector3(0f, height * 0.5f, 0f);
@@ -1131,6 +1132,49 @@ public static class GameSceneBuilder
         }
 
         return model;
+    }
+
+    /// <summary>
+    /// Parents one of the skeleton prop models (Assets/Models/Skeletons/Props) to a
+    /// hand attachment slot on an animated skeleton, so the prop rides the hand.
+    /// The shared Rig_Medium skeleton exposes handslot.l / handslot.r at the palms.
+    /// </summary>
+    static void AttachPropToHand(GameObject model, string propName, string slotName = "handslot.r")
+    {
+        if (model == null)
+            return;
+
+        Transform slot = null;
+        foreach (var t in model.GetComponentsInChildren<Transform>(true))
+        {
+            if (t.name == slotName)
+            {
+                slot = t;
+                break;
+            }
+        }
+
+        if (slot == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] No '{slotName}' bone on {model.name}; {propName} was not attached.");
+            return;
+        }
+
+        var asset = AssetDatabase.LoadAssetAtPath<GameObject>($"{k_EnemyModelFolder}/Props/{propName}.fbx");
+        if (asset == null)
+        {
+            Debug.LogWarning($"[GameSceneBuilder] Missing prop model {propName}.fbx under {k_EnemyModelFolder}/Props.");
+            return;
+        }
+
+        var prop = (GameObject)PrefabUtility.InstantiatePrefab(asset, slot);
+        prop.name = propName;
+        prop.transform.localPosition = Vector3.zero;
+        prop.transform.localRotation = Quaternion.identity;
+        prop.transform.localScale = Vector3.one;
+
+        foreach (var collider in prop.GetComponentsInChildren<Collider>())
+            Object.DestroyImmediate(collider);
     }
 
     static Bounds MeasureRendererBounds(GameObject root)
@@ -1674,8 +1718,8 @@ public static class GameSceneBuilder
 
         // Grip the handle (local +Z) with the palm, near the butt end. The pose
         // transform's local +X axis is the handle axis the hand wraps around.
-        // (0, 90, 0) is the SDK's right-hand OVR offset; the old (0, 90, 180) is
-        // the left-hand one and made the right hand hold the axe backwards.
+        // (0, 90, 0) is the SDK's right-hand OVR offset; AddGripHandle mirrors it
+        // for the left hand, so the axe reads the same way whichever hand takes it.
         AddGripHandle(axe, new Vector3(0f, 0f, -0.12f), Quaternion.Euler(0f, 90f, 0f));
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(axe, $"{k_PrefabFolder}/Axe.prefab");
@@ -1684,29 +1728,122 @@ public static class GameSceneBuilder
     }
 
     /// <summary>
-    /// Adds a grip transform and makes every grab interactable on
-    /// <paramref name="go"/> use it, so the object is always held by the grip
-    /// instead of wherever the hand happened to touch.
+    /// Rebuilds Assets/Prefabs/Gameplay/Axe.prefab on its own, without touching the
+    /// open scene. Loads the material and throw profile the builder needs (which
+    /// BuildAxePrefab normally receives from ApplyToCurrentScene), so the current
+    /// grip wiring can be re-applied from tooling directly.
+    /// </summary>
+    public static GameObject RebuildAxePrefab()
+    {
+        s_Axe = AssetDatabase.LoadAssetAtPath<Material>($"{k_MaterialFolder}/M_Axe.mat");
+        if (s_Axe == null)
+            s_Axe = CreateTexturedMaterial("M_Axe", k_AxeTexturePath);
+
+        s_AxeProfile = AssetDatabase.LoadAssetAtPath<ThrowPhysicsProfile>($"{k_ProfileFolder}/AxeProfile.asset");
+        if (s_AxeProfile == null)
+            CreateThrowProfiles();
+
+        return BuildAxePrefab();
+    }
+
+    /// <summary>
+    /// Adds the grip transforms and the per-hand hand-grab poses.
+    ///
+    /// Each hand gets its own <see cref="HandGrabInteractable"/> and
+    /// <see cref="HandGrabPose"/>, gated to that hand by the pose's
+    /// <see cref="HandPose.Handedness"/> (the only thing <c>SupportsHandedness</c>
+    /// reads). Because a HandPose also makes the SDK align the pose as the WRIST,
+    /// the poses are seated by <see cref="HandGripWristOffset"/> at runtime. The
+    /// ray/point path keeps a plain grab source on the right grip.
     /// </summary>
     static void AddGripHandle(GameObject go, Vector3 localPosition, Quaternion localRotation)
     {
-        var handle = new GameObject("Grip");
-        handle.transform.SetParent(go.transform, false);
-        handle.transform.localPosition = localPosition;
-        handle.transform.localRotation = localRotation;
+        // Right is the authored orientation, left is its mirror. These match the
+        // SDK's OVR offsets: right = Euler(0, 90, 0), left = Euler(0, 90, 180).
+        Quaternion leftRotation = localRotation * Quaternion.Euler(0f, 0f, 180f);
 
+        Transform rightGrip = CreateGrip(go, "Grip Right", localPosition, localRotation);
+        Transform leftGrip = CreateGrip(go, "Grip Left", localPosition, leftRotation);
+
+        // Ray/point grabs carry no handedness, so they keep the single right-hand source.
         foreach (var grab in go.GetComponentsInChildren<GrabInteractable>(true))
+            grab.InjectOptionalGrabSource(rightGrip);
+
+        HandGrabPose rightPose = null;
+        HandGrabPose leftPose = null;
+        foreach (var source in go.GetComponentsInChildren<HandGrabInteractable>(true))
         {
-            grab.InjectOptionalGrabSource(handle.transform);
+            var mirror = CreateMirroredHandGrabInteractable(source);
+            rightPose = AttachHandPose(source, CreateGrip(go, "Pose Right", localPosition, localRotation), Handedness.Right);
+            leftPose = AttachHandPose(mirror, CreateGrip(go, "Pose Left", localPosition, leftRotation), Handedness.Left);
         }
 
-        foreach (var handGrab in go.GetComponentsInChildren<HandGrabInteractable>(true))
-        {
-            var pose = handle.AddComponent<HandGrabPose>();
-            pose.InjectAllHandGrabPose(handGrab.transform);
-            pose.InjectOptionalHandPose(null);
-            handGrab.InjectOptionalHandGrabPoses(new List<HandGrabPose> { pose });
-        }
+        var offset = go.AddComponent<HandGripWristOffset>();
+        var serialized = new SerializedObject(offset);
+        serialized.FindProperty("m_RightGrip").objectReferenceValue = rightGrip;
+        serialized.FindProperty("m_LeftGrip").objectReferenceValue = leftGrip;
+        serialized.FindProperty("m_RightPose").objectReferenceValue = rightPose;
+        serialized.FindProperty("m_LeftPose").objectReferenceValue = leftPose;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    static Transform CreateGrip(GameObject go, string name, Vector3 localPosition, Quaternion localRotation)
+    {
+        var grip = new GameObject(name);
+        grip.transform.SetParent(go.transform, false);
+        grip.transform.localPosition = localPosition;
+        grip.transform.localRotation = localRotation;
+        return grip.transform;
+    }
+
+    /// <summary>
+    /// Duplicates a <see cref="HandGrabInteractable"/> so the other hand can have
+    /// its own pose. The grab configuration is copied; the poses are not, because
+    /// the caller assigns one per hand afterwards.
+    /// </summary>
+    static HandGrabInteractable CreateMirroredHandGrabInteractable(HandGrabInteractable source)
+    {
+        var mirror = source.gameObject.AddComponent<HandGrabInteractable>();
+        mirror.InjectAllHandGrabInteractable(source.SupportedGrabTypes, source.Rigidbody,
+            source.PinchGrabRules, source.PalmGrabRules);
+        mirror.InjectOptionalScoreModifier(source.ScoreModifier);
+        mirror.InjectOptionalPointableElement(source.PointableElement);
+        mirror.HandAlignment = source.HandAlignment;
+        mirror.Slippiness = source.Slippiness;
+        mirror.ResetGrabOnGrabsUpdated = source.ResetGrabOnGrabsUpdated;
+        mirror.MaxSelectingInteractors = source.MaxSelectingInteractors;
+        return mirror;
+    }
+
+    /// <summary>
+    /// Gives a hand-grab interactable one pose, gated to <paramref name="handedness"/>.
+    ///
+    /// The <see cref="HandPose"/> exists only so <c>SupportsHandedness</c> can tell the
+    /// hands apart (the SDK offers no other handedness field); every finger is left
+    /// <see cref="JointFreedom.Free"/> so the player's real finger tracking is
+    /// preserved. Assigning a HandPose also switches the SDK to wrist-space alignment,
+    /// which is why <see cref="HandGripWristOffset"/> has to seat the pose at runtime.
+    /// </summary>
+    static HandGrabPose AttachHandPose(HandGrabInteractable handGrab, Transform poseRoot, Handedness handedness)
+    {
+        var pose = poseRoot.gameObject.AddComponent<HandGrabPose>();
+        pose.InjectAllHandGrabPose(handGrab.RelativeTo);
+        pose.InjectOptionalHandPose(CreateGatingHandPose(handedness));
+        handGrab.InjectOptionalHandGrabPoses(new List<HandGrabPose> { pose });
+        handGrab.MaxSelectingInteractors = 1;
+        return pose;
+    }
+
+    static HandPose CreateGatingHandPose(Handedness handedness)
+    {
+        // The parameterless constructor seeds joint rotations from the default skeleton
+        // while building in the editor. They are never applied (every finger is Free)
+        // but keep the serialized pose well formed.
+        var handPose = new HandPose();
+        handPose.Handedness = handedness;
+        for (int i = 0; i < handPose.FingersFreedom.Length; i++)
+            handPose.FingersFreedom[i] = JointFreedom.Free;
+        return handPose;
     }
 
     /// <summary>

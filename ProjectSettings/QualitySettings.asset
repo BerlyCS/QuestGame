@@ -326,7 +326,7 @@ QualitySettings:
     excludedTargetPlatforms: []
   - serializedVersion: 5
     name: Meta Quest (Build Profile)
-    pixelLightCount: 4
+    pixelLightCount: 3
     shadows: 2
     shadowResolution: 2
     shadowProjection: 1

@@ -37,7 +37,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 4711816949394255280}
+  - {fileID: 7699741288938030703}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &3660728731682503161
@@ -217,9 +217,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1bbf2dc49f1b63741803705584a6ed88, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Log
-  m_FuelValue: 45
+  m_FuelValue: 30
   m_ConsumeEffect: {fileID: 0}
   m_OnConsumed:
+    m_PersistentCalls:
+      m_Calls: []
+  m_OnGrabbed:
     m_PersistentCalls:
       m_Calls: []
 --- !u!1001 &7876866757958443396
@@ -230,10 +233,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 7041531220919966138}
     m_Modifications:
-    - target: {fileID: 919132149155446097, guid: baf9bd32072232f429d4fd3c1636de1e, type: 3}
-      propertyPath: m_Name
-      value: Log Model
-      objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: baf9bd32072232f429d4fd3c1636de1e, type: 3}
       propertyPath: m_LocalScale.x
       value: 88.926
@@ -286,12 +285,16 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: baf9bd32072232f429d4fd3c1636de1e, type: 3}
+      propertyPath: m_Name
+      value: Log Model
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: baf9bd32072232f429d4fd3c1636de1e, type: 3}
---- !u!4 &4711816949394255280 stripped
+--- !u!4 &7699741288938030703 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: baf9bd32072232f429d4fd3c1636de1e, type: 3}
   m_PrefabInstance: {fileID: 7876866757958443396}

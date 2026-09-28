@@ -35,6 +35,19 @@ public class PlayerHealth : MonoBehaviour
     [Tooltip("Transparent unlit material for the damage vignette quad (its texture is generated here).")]
     [SerializeField] Material m_VignetteMaterial;
 
+    [Header("Damage vignette")]
+    [Tooltip("Where the red border starts at full life, as a fraction of the view: 0 = centre, 1 = the edge.")]
+    [SerializeField, Range(0f, 1f)] float m_VignetteBorder = 0.8f;
+    [Tooltip("How much further in the border reaches once life is gone, so damage closes the view in a little " +
+        "without ever blocking the centre.")]
+    [SerializeField, Range(0f, 1f)] float m_VignetteBorderInset = 0.25f;
+    [Tooltip("Maximum opacity of the red border. Kept well below 1 so a hit tints the edges without blocking the " +
+        "view; the border still thickens and deepens as life drops.")]
+    [SerializeField, Range(0f, 1f)] float m_VignetteAlpha = 0.4f;
+    [Tooltip("Extra size on the vignette quad, as a multiple of the view. 1 = exactly the view; a hair over keeps " +
+        "the border from clipping at the edges.")]
+    [SerializeField, Range(1f, 1.3f)] float m_VignetteMargin = 1.02f;
+
     [Header("Death")]
     [Tooltip("Player death cry played as the screen floods red. Falls back to the clip under Resources/Death when empty; GameManager's sinister laugh still plays on top of it.")]
     [SerializeField] AudioClip m_DeathSfx;
@@ -103,20 +116,44 @@ public class PlayerHealth : MonoBehaviour
         if (m_VignetteMaterial == null)
             return;
 
-        m_Instance = new Material(m_VignetteMaterial);
-        m_Instance.SetTexture("_BaseMap", CreateVignetteTexture());
+        if (m_VignetteMaterial == null)
+            return;
+
+        m_Instance = new Material(m_VignetteMaterial) { name = "M_DamageVignette (Runtime)" };
+        m_Instance.SetTexture("_BaseMap", CreateVignetteTexture(m_VignetteBorder));
 
         var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         quad.name = "Damage Vignette";
         Destroy(quad.GetComponent<Collider>());
         quad.transform.SetParent(m_Head, false);
         quad.transform.localPosition = new Vector3(0f, 0f, 0.35f);
-        quad.transform.localScale = new Vector3(1.6f, 1.6f, 1f);
         m_Vignette = quad.GetComponent<Renderer>();
         m_Vignette.sharedMaterial = m_Instance;
         m_Vignette.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         m_Vignette.receiveShadows = false;
         m_Vignette.enabled = false;
+        RefreshVignetteSize();
+    }
+
+    /// <summary>
+    /// Sizes the vignette quad to the camera's view so the border texture's edges
+    /// land on the edges of what the player sees, for whatever FOV and aspect the
+    /// XR runtime is using. Runs every frame because the XR projection can settle
+    /// after Awake.
+    /// </summary>
+    void RefreshVignetteSize()
+    {
+        if (m_Vignette == null)
+            return;
+
+        Camera camera = m_Head != null ? m_Head.GetComponent<Camera>() : null;
+        if (camera == null || camera.fieldOfView <= 0.01f)
+            return;
+
+        float z = m_Vignette.transform.localPosition.z;
+        float halfHeight = z * Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad) * m_VignetteMargin;
+        float halfWidth = halfHeight * camera.aspect;
+        m_Vignette.transform.localScale = new Vector3(2f * halfWidth, 2f * halfHeight, 1f);
     }
 
     /// <summary>
@@ -180,6 +217,7 @@ public class PlayerHealth : MonoBehaviour
     void Update()
     {
         Regenerate();
+        RefreshVignetteSize();
         UpdateVignette();
     }
 
@@ -202,8 +240,25 @@ public class PlayerHealth : MonoBehaviour
             return;
 
         m_HurtPulse = Mathf.Max(0f, m_HurtPulse - Time.deltaTime * 1.2f);
-        float alpha = Mathf.Clamp01(Mathf.Max(m_HurtPulse, (1f - Health01) * 0.55f));
+
+        // Missing life thickens the border inward; a fresh hit flashes it. Coverage
+        // is an edge inset, never a centre wipe, so a hit reads on the borders and the
+        // middle of the view always stays clear.
+        float damage = Mathf.Clamp01(1f - Health01);
+        float border = Mathf.Lerp(m_VignetteBorder, m_VignetteBorder - m_VignetteBorderInset, damage);
+        float alpha = Mathf.Clamp01(Mathf.Max(m_HurtPulse, damage) * m_VignetteAlpha);
+
         m_Vignette.enabled = alpha > 0.01f;
+        if (!m_Vignette.enabled)
+            return;
+
+        // Zoom the border texture about its centre so the frame reaches further in as
+        // life drops. The texture is authored with its frame starting at
+        // m_VignetteBorder, so this maps that frame onto 'border' in view space.
+        float denom = Mathf.Max(0.05f, border - 0.5f);
+        float zoom = Mathf.Max(1f, (m_VignetteBorder - 0.5f) / denom);
+        m_Instance.SetTextureScale("_BaseMap", new Vector2(zoom, zoom));
+        m_Instance.SetTextureOffset("_BaseMap", new Vector2((1f - zoom) * 0.5f, (1f - zoom) * 0.5f));
         m_Instance.SetColor("_BaseColor", new Color(0.9f, 0.04f, 0.04f, alpha));
     }
 
@@ -385,8 +440,13 @@ public class PlayerHealth : MonoBehaviour
             Destroy(m_DeathInstance);
     }
 
-    /// <summary>Radial gradient: clear in the middle, opaque red toward the edges.</summary>
-    static Texture2D CreateVignetteTexture()
+    /// <summary>
+    /// Circular border gradient for the vignette: clear across the middle, opaque red
+    /// in a ring around it. <paramref name="border"/> is where the ring starts
+    /// (0 = centre, 1 = the edge). The runtime zooms it about its centre to push the
+    /// ring further in as life drops.
+    /// </summary>
+    static Texture2D CreateVignetteTexture(float border)
     {
         const int size = 64;
         var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
@@ -399,10 +459,14 @@ public class PlayerHealth : MonoBehaviour
         {
             for (int x = 0; x < size; x++)
             {
-                float dx = (x + 0.5f) / size * 2f - 1f;
-                float dy = (y + 0.5f) / size * 2f - 1f;
-                float d = Mathf.Sqrt(dx * dx + dy * dy);
-                float a = Mathf.SmoothStep(0.35f, 1f, d);
+                float u = (x + 0.5f) / size;
+                float v = (y + 0.5f) / size;
+                float dx = (u - 0.5f) * 2f;
+                float dy = (v - 0.5f) * 2f;
+                // Circular ring: distance from the centre, so the red forms a round
+                // vignette rather than a rectangular frame.
+                float edge = Mathf.Sqrt(dx * dx + dy * dy);
+                float a = Mathf.SmoothStep(border, Mathf.Min(1f, border + 0.25f), edge);
                 texture.SetPixel(x, y, new Color(1f, 1f, 1f, a));
             }
         }

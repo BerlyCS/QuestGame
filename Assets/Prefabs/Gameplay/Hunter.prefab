@@ -75,6 +75,11 @@ MonoBehaviour:
   m_ArmSwing: 35
   m_KneelDropAmount: 0.3
   m_HitFlashColor: {r: 1, g: 0.65, b: 0.1, a: 1}
+  m_StepSfx: {fileID: 0}
+  m_StepSfxVolume: 0.35
+  m_StepInterval: 0.55
+  m_HitSfx: {fileID: 0}
+  m_HitSfxVolume: 0.8
   m_DeathSfx: {fileID: 8300000, guid: e5f6a7b8c9da4be2f3a4b5c6d7e8f9a0, type: 3}
   m_DeathSfxVolume: 0.85
   m_DeathParticles: 1
@@ -241,7 +246,10 @@ PrefabInstance:
       objectReference: {fileID: 2100000, guid: 714d6aa3b58869b4dad643e625562dd6, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: -5515783359193845756, guid: 1c860dd855a16b9458e4cda99ea39657, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7914629602329745222}
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 1c860dd855a16b9458e4cda99ea39657, type: 3}
       insertIndex: -1
@@ -279,3 +287,70 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!4 &3463519113320422911 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -5515783359193845756, guid: 1c860dd855a16b9458e4cda99ea39657, type: 3}
+  m_PrefabInstance: {fileID: 244571012711067131}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &7664230248675455149
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 3463519113320422911}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+      propertyPath: m_Name
+      value: Skeleton_Blade
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+--- !u!4 &7914629602329745222 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 767bf1df9472b224e86dbcbb856f401f, type: 3}
+  m_PrefabInstance: {fileID: 7664230248675455149}
+  m_PrefabAsset: {fileID: 0}

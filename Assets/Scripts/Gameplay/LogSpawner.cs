@@ -21,8 +21,9 @@ public class LogSpawner : MonoBehaviour
     [Tooltip("How many logs the pile should always settle back to.")]
     [SerializeField] int m_MaxStock = 6;
 
-    [Tooltip("Delay before a used log is replaced, so restocking feels gradual rather than instant.")]
-    [SerializeField] float m_RestockDelay = 3f;
+    [Tooltip("Delay before a used log is replaced. Long enough that the pile refills slowly and can genuinely " +
+        "run short if the player neglects it.")]
+    [SerializeField] float m_RestockDelay = 10f;
 
     int m_StockCount;
     int m_PendingRestocks;

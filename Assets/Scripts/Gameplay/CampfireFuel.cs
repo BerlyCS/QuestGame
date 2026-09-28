@@ -45,15 +45,19 @@ public class CampfireFuel : MonoBehaviour
 
     [Header("Fire Light")]
     [SerializeField] Light m_FireLight;
-    [SerializeField] float m_MinLightIntensity = 0.3f;
+    // The floor is deliberately well above "ember": the first log only brings the
+    // fire to ~37% fuel, and it is the only light at nightfall, so a barely-fed
+    // fire still has to light the camp rather than leave the scene in darkness.
+    [SerializeField] float m_MinLightIntensity = 0.8f;
     [SerializeField] float m_MaxLightIntensity = 6f;
-    [SerializeField] float m_MinLightRange = 5f;
+    [SerializeField] float m_MinLightRange = 7f;
     [SerializeField] float m_MaxLightRange = 16f;
     [SerializeField] Color m_EmberColor = new Color(0.9f, 0.25f, 0.05f);
     [SerializeField] Color m_FlameColor = new Color(1f, 0.7f, 0.25f);
-    [Tooltip("Exponent applied to fuel01 before driving the light (pow(t, 0.7)): the " +
-        "last 20% of fuel collapses fast instead of fading in a straight line.")]
-    [SerializeField] float m_LightCurveExponent = 0.7f;
+    [Tooltip("Exponent applied to fuel01 before driving the light (pow(t, 0.4)): keeps a " +
+        "partly-fed fire - such as the single first log - already lighting the camp, so " +
+        "the night does not begin in darkness; it still dims as the fuel burns down.")]
+    [SerializeField] float m_LightCurveExponent = 0.4f;
 
     [Header("Fire Light Flicker")]
     [Tooltip("How far the light wanders from its fuel-driven base intensity, as a " +

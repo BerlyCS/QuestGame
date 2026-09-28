@@ -17,9 +17,9 @@ public class Log : MonoBehaviour
 {
     [SerializeField]
         [Tooltip("How much fuel this log adds when thrown into the fire, in seconds. " +
-            "One log should visibly revive the dead prologue fire, so it lands around " +
-            "half the bar rather than a weak ember.")]
-        float m_FuelValue = 45f;
+            "About a quarter of the bar: a real top-up, so feeding the fire holds even " +
+            "while the Coronado is doubling the burn.")]
+        float m_FuelValue = 30f;
 
     [SerializeField]
     [Tooltip("Optional effect spawned when the log is consumed.")]
